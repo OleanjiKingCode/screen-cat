@@ -131,50 +131,51 @@ class BehaviorTest {
     }
 
     @Test
-    fun mrRobotNeverShowsTheCatHopsAndEndsAfterThreeMinutes() {
+    fun zeroDayNeverShowsTheCatHopsAndEndsAfterThreeMinutes() {
         val s = scene()
-        val robot = makeBehavior(Routine.MR_ROBOT, s) as IdleCrawlBehavior
-        assertTrue(robot.catless)
-        assertTrue(robot.countdownLeft > 2.9f)
+        val zeroDay = makeBehavior(Routine.ZERO_DAY, s) as IdleCrawlBehavior
+        assertTrue(zeroDay.catless)
+        assertTrue(zeroDay.countdownLeft > 2.9f)
         var t = 0f
         var done = false
         var styleChanges = 0
-        var lastStyle = robot.recipeIndex
+        var lastStyle = zeroDay.recipeIndex
         var hops = 0
         var wasHopping = false
         var sawFull = false
         var minAfterFull = 1f
         while (!done && t < 190f) {
             s.cat.advance(dt)
-            done = robot.update(dt, s)
+            done = zeroDay.update(dt, s)
             t += dt
             assertFalse("cat showed at $t", s.cat.visible)
             // Fades in over 0.3 s once the countdown is over.
-            if (t > 3.4f && t < 4f) assertTrue(robot.takeoverOpacity >= 0.99f)
-            if (robot.takeoverOpacity >= 0.99f) sawFull = true
-            if (sawFull && !done) minAfterFull = minOf(minAfterFull, robot.takeoverOpacity)
-            val hopping = robot.stageName == "hopping"
+            if (t > 3.4f && t < 4f) assertTrue(zeroDay.takeoverOpacity >= 0.99f)
+            if (zeroDay.takeoverOpacity >= 0.99f) sawFull = true
+            if (sawFull && !done) minAfterFull = minOf(minAfterFull, zeroDay.takeoverOpacity)
+            val hopping = zeroDay.stageName == "hopping"
             if (hopping && !wasHopping) hops++
             wasHopping = hopping
-            if (robot.recipeIndex != lastStyle) { styleChanges++; lastStyle = robot.recipeIndex }
+            if (zeroDay.recipeIndex != lastStyle) { styleChanges++; lastStyle = zeroDay.recipeIndex }
         }
         assertTrue(done)
+        assertEquals(Routine.ZERO_DAY, Routine.from("zeroday"))
         assertTrue("ended at $t", t in 180f..181f)
-        // A hop every 4 to 7 s plus 1.3 s of dim, over 177 s of glitch.
-        assertTrue("only $hops hops", hops in 20..35)
+        // A hop every 1.5 to 3 s plus 0.8 s of dim, over 177 s of glitch.
+        assertTrue("$hops hops", hops in 45..78)
         assertTrue("dimmed to $minAfterFull during hops", minAfterFull in 0.24f..0.26f)
         assertTrue("only $styleChanges style changes", styleChanges >= hops)
     }
 
     @Test
-    fun mrRobotTouchEndsAtOnceWithNoShrink() {
+    fun zeroDayTouchEndsAtOnceWithNoShrink() {
         val s = scene()
-        val robot = makeBehavior(Routine.MR_ROBOT, s) as IdleCrawlBehavior
+        val zeroDay = makeBehavior(Routine.ZERO_DAY, s) as IdleCrawlBehavior
         var t = 0f
-        while (t < 10f) { s.cat.advance(dt); robot.update(dt, s); t += dt }
-        robot.beginExit()
-        assertEquals(0f, robot.takeoverOpacity, 0f)
-        assertTrue("did not end on the next frame", robot.update(dt, s))
+        while (t < 10f) { s.cat.advance(dt); zeroDay.update(dt, s); t += dt }
+        zeroDay.beginExit()
+        assertEquals(0f, zeroDay.takeoverOpacity, 0f)
+        assertTrue("did not end on the next frame", zeroDay.update(dt, s))
         assertFalse(s.cat.visible)
     }
 
@@ -184,7 +185,12 @@ class BehaviorTest {
         for (gone in listOf("Blue Screen of Meow", "Meow Wall", "Cat Virus", "Cat OS Crash", "Gold Rush", "Error 404")) {
             assertFalse(gone, names.contains(gone))
         }
-        for (now in listOf("Kernel Panic", "Root Wall", "Worm Outbreak", "Fatal Exception", "Ransomware", "Access Denied")) {
+        for (gone in listOf("Pink Rain", "Ice Rain", "Purple Haze", "Sunset Melt", "Frozen", "Neon Tunnel", "Synthwave Scope", "Outrun")) {
+            assertFalse(gone, names.contains(gone))
+        }
+        for (now in listOf("Kernel Panic", "Root Wall", "Worm Outbreak", "Fatal Exception", "Ransomware", "Access Denied",
+                           "Blood Rain", "Binary Rain", "Red Haze", "Firewall Melt", "Lockdown", "Breach Tunnel",
+                           "Signal Intercept", "Grid Runner")) {
             assertTrue(now, names.contains(now))
         }
     }
