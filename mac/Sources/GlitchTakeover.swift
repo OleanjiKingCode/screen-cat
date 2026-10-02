@@ -41,6 +41,7 @@ private let amber = [hex(0xFFBF33), hex(0xFF7A1A), hex(0xFFE08A)]
 private let blood = [hex(0xFF3B4A), hex(0xFF8A80), hex(0x8A0016)]
 private let synth = [hex(0xFF2E97), hex(0x00E5FF), hex(0xFFD319)]
 private let ghost = [hex(0xFFFFFF), hex(0xB0B0B0), hex(0x5A5A5A)]
+// Purple and gold.
 private let royal = [hex(0xA87BE0), hex(0xFFC94A), hex(0x5B2D91)]
 private let sunset = [hex(0xFF6B35), hex(0xF7C59F), hex(0x2EC4B6)]
 private let void = [hex(0xE0AAFF), hex(0x9D4EDD), hex(0x3C096C)]
@@ -53,7 +54,7 @@ let glitchRecipes: [GlitchRecipe] = [
     GlitchRecipe(name: "Digital Rain", dim: 0.92, layers: [.matrix(kana), .rollingBar], palette: toxic),
     GlitchRecipe(name: "Ice Rain", dim: 0.92, layers: [.matrix("01"), .scanlines], palette: ice),
     GlitchRecipe(name: "Pink Rain", dim: 0.92, layers: [.matrix(kana), .tint], palette: hotPink),
-    GlitchRecipe(name: "Blue Screen of Meow", dim: 1, layers: [.blueScreen], palette: ice),
+    GlitchRecipe(name: "Kernel Panic", dim: 1, layers: [.blueScreen], palette: ice),
     GlitchRecipe(name: "No Signal", dim: 0.7, layers: [.staticNoise, .colorBars, .rollingBar, .bigText(["NO SIGNAL"])], palette: ghost),
     GlitchRecipe(name: "Amber Static", dim: 0.75, layers: [.staticNoise, .scanlines, .tint], palette: amber),
     GlitchRecipe(name: "Meltdown", dim: 0.7, layers: [.melt, .scanlines, .bigText(["MELTDOWN"])], palette: blood),
@@ -70,15 +71,15 @@ let glitchRecipes: [GlitchRecipe] = [
     GlitchRecipe(name: "Outrun", dim: 0.96, layers: [.gridFloor, .scanlines], palette: synth),
     GlitchRecipe(name: "RGB Waves", dim: 0.78, layers: [.waves, .slices], palette: synth),
     GlitchRecipe(name: "Checker Panic", dim: 0.72, layers: [.checker, .bigText(["ALERT"])], palette: blood),
-    GlitchRecipe(name: "Meow Wall", dim: 0.88, layers: [.tiled("MEOW"), .scanlines], palette: royal),
+    GlitchRecipe(name: "Root Wall", dim: 0.88, layers: [.tiled("ROOT ACCESS"), .scanlines], palette: royal),
     GlitchRecipe(name: "Hacked Wall", dim: 0.88, layers: [.tiled("HACKED"), .slices], palette: toxic),
     GlitchRecipe(name: "Download Everything", dim: 0.92, layers: [.hexWall, .loading], palette: amber),
-    GlitchRecipe(name: "Cat Virus", dim: 0.85, layers: [.virus, .bigText(["CAT VIRUS DETECTED", "CAT VIRUS"])], palette: toxic),
+    GlitchRecipe(name: "Worm Outbreak", dim: 0.85, layers: [.virus, .bigText(["WORM SPREADING", "INFECTED"])], palette: toxic),
     GlitchRecipe(name: "Hex Dump", dim: 0.94, layers: [.hexWall, .rollingBar], palette: amber),
     GlitchRecipe(name: "Root Shell", dim: 0.94, layers: [.codeWall, .scanlines], palette: toxic),
     GlitchRecipe(name: "Data Stream", dim: 0.92, layers: [.dataStream, .scanlines], palette: ice),
     GlitchRecipe(name: "Purple Haze", dim: 0.8, layers: [.waves, .tint, .staticNoise], palette: void),
-    GlitchRecipe(name: "Ghost Signal", dim: 0.78, layers: [.staticNoise, .tears, .bigText(["IS ANYONE THERE?", "HELLO?"])], palette: ghost),
+    GlitchRecipe(name: "Ghost Signal", dim: 0.78, layers: [.staticNoise, .tears, .bigText(["WE ARE INSIDE", "INSIDE"])], palette: ghost),
     GlitchRecipe(name: "Red Alert", dim: 0.82, layers: [.rollingBar, .checker, .bigText(["SELF DESTRUCT IN #", "BOOM IN #"])], palette: blood),
     GlitchRecipe(name: "Sunset Melt", dim: 0.72, layers: [.melt, .waves], palette: sunset),
     GlitchRecipe(name: "Neon Tunnel", dim: 0.92, layers: [.tunnel, .warp], palette: synth),
@@ -88,13 +89,13 @@ let glitchRecipes: [GlitchRecipe] = [
     GlitchRecipe(name: "Broken Display", dim: 0.72, layers: [.tears, .colorBars, .slices, .cracks], palette: ghost),
     GlitchRecipe(name: "Radar Rain", dim: 0.92, layers: [.radar, .matrix("01")], palette: ice),
     GlitchRecipe(name: "Synthwave Scope", dim: 0.96, layers: [.gridFloor, .scope], palette: synth),
-    GlitchRecipe(name: "Error 404", dim: 0.75, layers: [.tiled("404"), .popups], palette: blood),
+    GlitchRecipe(name: "Access Denied", dim: 0.75, layers: [.tiled("ACCESS DENIED"), .popups], palette: blood),
     GlitchRecipe(name: "Infection", dim: 0.85, layers: [.virus, .codeWall], palette: hotPink),
     GlitchRecipe(name: "Deep Sort", dim: 0.75, layers: [.pixelSort, .rollingBar, .scanlines], palette: void),
-    GlitchRecipe(name: "Gold Rush", dim: 0.9, layers: [.tiled("PAY ME"), .dataStream], palette: amber),
+    GlitchRecipe(name: "Ransomware", dim: 0.9, layers: [.tiled("PAY 5 BTC"), .dataStream, .bigText(["YOUR FILES ARE ENCRYPTED", "ENCRYPTED"])], palette: amber),
     GlitchRecipe(name: "Heartbeat Grid", dim: 0.94, layers: [.gridFloor, .heartbeat], palette: toxic),
     GlitchRecipe(name: "Frozen", dim: 0.78, layers: [.checker, .tint, .cracks], palette: ice),
-    GlitchRecipe(name: "Cat OS Crash", dim: 1, layers: [.blueScreen, .tears], palette: royal),
+    GlitchRecipe(name: "Fatal Exception", dim: 1, layers: [.blueScreen, .tears], palette: blood),
     GlitchRecipe(name: "Signal Lost", dim: 0.75, layers: [.vhs, .staticNoise, .bigText(["SIGNAL LOST", "LOST"])], palette: amber),
     GlitchRecipe(name: "Laser Grid", dim: 0.94, layers: [.gridFloor, .radar], palette: blood),
     GlitchRecipe(name: "Hyperdrive", dim: 0.96, layers: [.warp, .tunnel], palette: void),
@@ -307,13 +308,21 @@ private func hexWall(_ r: CGRect, _ t: CGFloat, _ pal: [NSColor], _ seed: UInt32
 }
 
 private let wallCode = [
-    "$ sudo purr --force --no-mercy", "inject --payload whiskers.bin", "bypass firewall :: port 443 OPEN",
-    "decrypt(0x3F2A9C) -> ok", "while (true) { claw(memory); }", "rm -rf /system/naps/*",
-    "kernel.panic(\"too many cats\")", "ssh root@mainframe --whiskers", "override AUTH_TOKEN=meow",
-    "patching memory @ 0x0C47", "exfiltrating yarn.db (2.3 MB)", "access level: ROOT",
-    "segfault in app.render()", "chmod 777 /dev/catnip", "ERROR 0xDEAD: app not responding",
-    "uploading hairball.zip", "fork() x 9 lives", "GET /api/v1/treats  200 OK", "deleting monday.exe ...",
-    "for (i = 0; i < 9; i++) lives[i].backup()", "mount /dev/fishtank /mnt/snacks", "compiling mischief.c ... done",
+    "> connecting to 185.220.101.47:22 ...", "$ nmap -sS -p- 10.0.0.0/24 --open",
+    "PORT     STATE SERVICE", "22/tcp   open  ssh",
+    "443/tcp  open  https", "$ ssh -i id_rsa root@10.0.0.14",
+    "Permission denied (publickey).", "$ hydra -l admin -P rockyou.txt ssh://10.0.0.14",
+    "[22][ssh] login: admin  password: ********", "bypassing firewall ... rule 0x1F dropped",
+    "decrypt(0x3F2A9C) -> ok", "dumping /etc/shadow ...",
+    "root:$6$Zx9Q...:19622:0:99999:7:::", "privilege escalation: CVE-20XX-0000 ... ok",
+    "uid=0(root) gid=0(root)", "$ curl -s http://10.0.0.14/admin.php?id=1' OR '1'='1",
+    "injecting payload stage2.bin (48 KB)", "spawning reverse shell -> 185.220.101.47:4444",
+    "keylogger attached to pid 4127", "exfiltrating /Users/*/Documents (2.3 GB)",
+    "wiping logs: /var/log/*.log", "kernel: segfault at 0x00007ffd in libsystem",
+    "ERROR 0xDEAD: process not responding", "rerouting traffic through 7 proxies",
+    "hash cracked: 5f4dcc3b5aa765d61d8327deb882cf99", "AES-256 key found: 9b2e...c41f",
+    "mounting /dev/disk2s1 /mnt/target", "GET /api/v1/users  200 OK",
+    "0101 1100 0011 1010 1110", "establishing persistence: launchd.plist",
 ]
 
 private func codeWall(_ r: CGRect, _ t: CGFloat, _ pal: [NSColor], _ seed: UInt32) {
@@ -362,8 +371,8 @@ private func blueScreen(_ r: CGRect, _ t: CGFloat, _ pal: [NSColor], _ ctx: CGCo
     (pal[2].blended(withFraction: 0.15, of: .black) ?? pal[2]).setFill()
     r.fill()
     let percent = min(100, Int(t * 1.7))
-    let lines = ["YOUR CAT RAN INTO A PROBLEM", "CAT.EXE HAS STOPPED", "STOP CODE: HAIRBALL",
-                 "COLLECTING CATNIP \(percent)%"]
+    let lines = ["YOUR SYSTEM HAS BEEN COMPROMISED", "KERNEL PANIC: NOT SYNCING", "STOP CODE: 0XC000021A",
+                 "UPLOADING MEMORY DUMP \(percent)%"]
     let widest = CGFloat(lines.map { PixelFont.width(of: $0) }.max() ?? 1)
     let p = max(2, min(7, floor(r.width * 0.75 / widest)))
     let left = r.minX + r.width * 0.1
@@ -481,7 +490,7 @@ private func popups(_ r: CGRect, _ t: CGFloat, _ pal: [NSColor], _ seed: UInt32,
         pal[i % pal.count].setFill()
         CGRect(x: box.minX, y: box.maxY - 22, width: w, height: 22).fill()
         PixelFont.draw("ERROR", at: CGPoint(x: box.minX + 10, y: box.maxY - 18), pixel: 2, color: .white, in: ctx)
-        let messages = ["CAT.EXE IS NOT RESPONDING", "TOO MANY CATS", "OUT OF TREATS", "PURR OVERFLOW", "LITTER BOX FULL"]
+        let messages = ["ACCESS DENIED", "SEGMENTATION FAULT", "FIREWALL DISABLED", "DISK ENCRYPTED", "CONNECTION HIJACKED"]
         PixelFont.draw(messages[i % messages.count], at: CGPoint(x: box.minX + 12, y: box.midY - 6), pixel: 2,
                        color: NSColor(white: 0.15, alpha: 1), in: ctx)
         NSColor(white: 0.8, alpha: 1).setFill()
@@ -653,7 +662,7 @@ private func checker(_ r: CGRect, _ t: CGFloat, _ pal: [NSColor], _ f: inout Gli
 }
 
 private func loading(_ r: CGRect, _ t: CGFloat, _ pal: [NSColor], _ ctx: CGContext) {
-    let labels = ["DELETING PHOTOS", "UPLOADING BRAIN", "ENCRYPTING DISK", "FEEDING CAT", "FORMATTING C:", "MINING CATNIP"]
+    let labels = ["COPYING KEYCHAIN", "UPLOADING FILES", "ENCRYPTING DISK", "CRACKING PASSWORDS", "WIPING BACKUPS", "DISABLING FIREWALL"]
     let barW = min(r.width * 0.6, 900), barH: CGFloat = 26
     let x = r.midX - barW / 2
     var y = r.midY + CGFloat(labels.count) * 34
