@@ -19,7 +19,7 @@ import AppKit
 final class IdleCrawlBehavior: Behavior, BreachSource {
     private enum Stage {
         case countdown, entering, growing, moving, zapping, resting, switching, arriving, exiting
-        // Mr. Robot only: glitch on, then hop to a random app.
+        // Zero Day only: glitch on, then hop to a random app.
         case hacking, hopping
     }
     private var stage: Stage = .entering
@@ -42,13 +42,13 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     private var baseSize: CGFloat = 0
     private var growDuration: CGFloat { speed > 1 ? 1 : 3 }
 
-    /// 1 for the idle crawl. Mr. Robot runs at 4: glitches animate and change
-    /// four times as fast, and the cat moves twice as fast and hops screens
+    /// 1 for the idle crawl. Zero Day runs at 8: glitches animate and change
+    /// eight times as fast, and the cat moves twice as fast and hops screens
     /// after one stop instead of wandering each one.
     let speed: CGFloat
-    /// Ends by itself after this many seconds (Mr. Robot's three minutes).
+    /// Ends by itself after this many seconds (Zero Day's three minutes).
     let maxDuration: CGFloat?
-    /// Mr. Robot: no cat at all. The screen glitches and jumps between apps
+    /// Zero Day: no cat at all. The screen glitches and jumps between apps
     /// in random order, with bursts of flashes and a new style on every hop.
     let catless: Bool
     private var burstTimer: CGFloat = 0
@@ -98,7 +98,7 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
         }
     }
 
-    /// Any touch, or the end of Mr. Robot: the glitch goes at once, and the
+    /// Any touch, or the end of Zero Day: the glitch goes at once, and the
     /// cat shrinks away to nothing where it stands.
     func beginExit() {
         guard stage != .exiting else { return }
@@ -136,14 +136,14 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     private func planStops(_ windows: [CGRect], _ scene: Scene) {
         let s = scene.stage
         let top = s.maxY - scene.cat.size * 1.3
-        // Mr. Robot hops screens fast: one window, no wandering.
-        let windows = speed > 1 ? Array(windows.prefix(1)) : windows
+        // Zero Day hops screens fast: one window, no wandering.
+        let windows = speed > 1 ? Array(windows.prefix(1)) : Array(windows.prefix(2))
         var list: [Stop] = windows.map { w in
             let inset = min(scene.cat.size, w.width / 3)
             return Stop(point: CGPoint(x: CGFloat.random(in: (w.minX + inset)...(w.maxX - inset)),
                                        y: min(max(w.minY, s.minY), top)), window: w)
         }
-        for _ in 0..<(speed > 1 ? (windows.isEmpty ? 1 : 0) : Int.random(in: 2...3)) {
+        for _ in 0..<(speed > 1 ? (windows.isEmpty ? 1 : 0) : 1) {
             list.append(Stop(point: CGPoint(x: CGFloat.random(in: (s.minX + s.width * 0.1)...(s.maxX - s.width * 0.1)),
                                             y: CGFloat.random(in: s.minY...max(s.minY, top))), window: nil))
         }
@@ -169,8 +169,8 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     func update(_ dt: CGFloat, _ scene: Scene) -> Bool {
         zap?.age += dt
         pulse = max(0, pulse - dt * 1.5)
-        // Fades in over 1.2s (0.3s for Mr. Robot), out over 0.4s so the next
-        // screen shows promptly. While Mr. Robot hops it only dims, so the
+        // Fades in over 1.2s (0.3s for Zero Day), out over 0.4s so the next
+        // screen shows promptly. While Zero Day hops it only dims, so the
         // new app is glimpsed through the glitch.
         let level: CGFloat = takeoverOn ? (stage == .hopping ? 0.25 : 1) : 0
         let rise: CGFloat = catless ? 0.3 : 1.2
@@ -178,7 +178,9 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
             ? min(level, takeoverOpacity + dt / rise)
             : max(level, takeoverOpacity - dt / 0.4)
         if takeoverOpacity > 0 {
-            styleTime += dt * speed
+            // Zero Day runs its glitches at its own speed; the idle crawl at
+            // `glitchSpeed`.
+            styleTime += dt * (catless ? speed : scene.config.glitchSpeed)
             if styleTime >= scene.config.glitchStyleSeconds { nextStyle() }
         }
         let cat = scene.cat
@@ -196,7 +198,7 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
                 if catless {
                     takeoverOn = true
                     nextStyle()
-                    timer = CGFloat.random(in: 4...7)
+                    timer = CGFloat.random(in: 1.5...3)
                     stage = .hacking
                 } else {
                     cat.visible = true
@@ -213,11 +215,11 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
             }
             if timer <= 0 {
                 if requestRandomApp?() == true {
-                    timer = 1.3
+                    timer = 0.8
                     stage = .hopping
                 } else {
                     nextStyle()
-                    timer = CGFloat.random(in: 4...7)
+                    timer = CGFloat.random(in: 1.5...3)
                 }
             }
 
@@ -225,7 +227,7 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
             timer -= dt
             if timer <= 0 {
                 nextStyle()
-                timer = CGFloat.random(in: 4...7)
+                timer = CGFloat.random(in: 1.5...3)
                 stage = .hacking
             }
 
