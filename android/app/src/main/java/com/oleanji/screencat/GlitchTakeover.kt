@@ -71,6 +71,7 @@ private val AMBER = listOf(rgb(0xFFBF33), rgb(0xFF7A1A), rgb(0xFFE08A))
 private val BLOOD = listOf(rgb(0xFF3B4A), rgb(0xFF8A80), rgb(0x8A0016))
 private val SYNTH = listOf(rgb(0xFF2E97), rgb(0x00E5FF), rgb(0xFFD319))
 private val GHOST = listOf(rgb(0xFFFFFF), rgb(0xB0B0B0), rgb(0x5A5A5A))
+// Purple and gold.
 private val ROYAL = listOf(rgb(0xA87BE0), rgb(0xFFC94A), rgb(0x5B2D91))
 private val SUNSET = listOf(rgb(0xFF6B35), rgb(0xF7C59F), rgb(0x2EC4B6))
 private val VOID = listOf(rgb(0xE0AAFF), rgb(0x9D4EDD), rgb(0x3C096C))
@@ -84,7 +85,7 @@ val GLITCH_RECIPES: List<GlitchRecipe> = listOf(
     GlitchRecipe("Digital Rain", 0.92f, listOf(Matrix(KANA), RollingBar), TOXIC),
     GlitchRecipe("Ice Rain", 0.92f, listOf(Matrix("01"), Scanlines), ICE),
     GlitchRecipe("Pink Rain", 0.92f, listOf(Matrix(KANA), Tint), HOT_PINK),
-    GlitchRecipe("Blue Screen of Meow", 1f, listOf(BlueScreen), ICE),
+    GlitchRecipe("Kernel Panic", 1f, listOf(BlueScreen), ICE),
     GlitchRecipe("No Signal", 0.7f, listOf(StaticNoise, ColorBars, RollingBar, BigText(listOf("NO SIGNAL"))), GHOST),
     GlitchRecipe("Amber Static", 0.75f, listOf(StaticNoise, Scanlines, Tint), AMBER),
     GlitchRecipe("Meltdown", 0.7f, listOf(Melt, Scanlines, BigText(listOf("MELTDOWN"))), BLOOD),
@@ -101,15 +102,15 @@ val GLITCH_RECIPES: List<GlitchRecipe> = listOf(
     GlitchRecipe("Outrun", 0.96f, listOf(GridFloor, Scanlines), SYNTH),
     GlitchRecipe("RGB Waves", 0.78f, listOf(Waves, Slices), SYNTH),
     GlitchRecipe("Checker Panic", 0.72f, listOf(Checker, BigText(listOf("ALERT"))), BLOOD),
-    GlitchRecipe("Meow Wall", 0.88f, listOf(Tiled("MEOW"), Scanlines), ROYAL),
+    GlitchRecipe("Root Wall", 0.88f, listOf(Tiled("ROOT ACCESS"), Scanlines), ROYAL),
     GlitchRecipe("Hacked Wall", 0.88f, listOf(Tiled("HACKED"), Slices), TOXIC),
     GlitchRecipe("Download Everything", 0.92f, listOf(HexWall, Loading), AMBER),
-    GlitchRecipe("Cat Virus", 0.85f, listOf(Virus, BigText(listOf("CAT VIRUS DETECTED", "CAT VIRUS"))), TOXIC),
+    GlitchRecipe("Worm Outbreak", 0.85f, listOf(Virus, BigText(listOf("WORM SPREADING", "INFECTED"))), TOXIC),
     GlitchRecipe("Hex Dump", 0.94f, listOf(HexWall, RollingBar), AMBER),
     GlitchRecipe("Root Shell", 0.94f, listOf(CodeWall, Scanlines), TOXIC),
     GlitchRecipe("Data Stream", 0.92f, listOf(DataStream, Scanlines), ICE),
     GlitchRecipe("Purple Haze", 0.8f, listOf(Waves, Tint, StaticNoise), VOID),
-    GlitchRecipe("Ghost Signal", 0.78f, listOf(StaticNoise, Tears, BigText(listOf("IS ANYONE THERE?", "HELLO?"))), GHOST),
+    GlitchRecipe("Ghost Signal", 0.78f, listOf(StaticNoise, Tears, BigText(listOf("WE ARE INSIDE", "INSIDE"))), GHOST),
     GlitchRecipe("Red Alert", 0.82f, listOf(RollingBar, Checker, BigText(listOf("SELF DESTRUCT IN #", "BOOM IN #"))), BLOOD),
     GlitchRecipe("Sunset Melt", 0.72f, listOf(Melt, Waves), SUNSET),
     GlitchRecipe("Neon Tunnel", 0.92f, listOf(Tunnel, Warp), SYNTH),
@@ -119,13 +120,13 @@ val GLITCH_RECIPES: List<GlitchRecipe> = listOf(
     GlitchRecipe("Broken Display", 0.72f, listOf(Tears, ColorBars, Slices, Cracks), GHOST),
     GlitchRecipe("Radar Rain", 0.92f, listOf(Radar, Matrix("01")), ICE),
     GlitchRecipe("Synthwave Scope", 0.96f, listOf(GridFloor, Scope), SYNTH),
-    GlitchRecipe("Error 404", 0.75f, listOf(Tiled("404"), Popups), BLOOD),
+    GlitchRecipe("Access Denied", 0.75f, listOf(Tiled("ACCESS DENIED"), Popups), BLOOD),
     GlitchRecipe("Infection", 0.85f, listOf(Virus, CodeWall), HOT_PINK),
     GlitchRecipe("Deep Sort", 0.75f, listOf(PixelSort, RollingBar, Scanlines), VOID),
-    GlitchRecipe("Gold Rush", 0.9f, listOf(Tiled("PAY ME"), DataStream), AMBER),
+    GlitchRecipe("Ransomware", 0.9f, listOf(Tiled("PAY 5 BTC"), DataStream, BigText(listOf("YOUR FILES ARE ENCRYPTED", "ENCRYPTED"))), AMBER),
     GlitchRecipe("Heartbeat Grid", 0.94f, listOf(GridFloor, Heartbeat), TOXIC),
     GlitchRecipe("Frozen", 0.78f, listOf(Checker, Tint, Cracks), ICE),
-    GlitchRecipe("Cat OS Crash", 1f, listOf(BlueScreen, Tears), ROYAL),
+    GlitchRecipe("Fatal Exception", 1f, listOf(BlueScreen, Tears), BLOOD),
     GlitchRecipe("Signal Lost", 0.75f, listOf(Vhs, StaticNoise, BigText(listOf("SIGNAL LOST", "LOST"))), AMBER),
     GlitchRecipe("Laser Grid", 0.94f, listOf(GridFloor, Radar), BLOOD),
     GlitchRecipe("Hyperdrive", 0.96f, listOf(Warp, Tunnel), VOID),
@@ -294,13 +295,21 @@ private fun hexWall(r: Box, t: Float, pal: List<Int>, seed: Int, g: Gfx) {
 }
 
 private val WALL_CODE = listOf(
-    "$ sudo purr --force --no-mercy", "inject --payload whiskers.bin", "bypass firewall :: port 443 OPEN",
-    "decrypt(0x3F2A9C) -> ok", "while (true) { claw(memory); }", "rm -rf /system/naps/*",
-    "kernel.panic(\"too many cats\")", "ssh root@mainframe --whiskers", "override AUTH_TOKEN=meow",
-    "patching memory @ 0x0C47", "exfiltrating yarn.db (2.3 MB)", "access level: ROOT",
-    "segfault in app.render()", "chmod 777 /dev/catnip", "ERROR 0xDEAD: app not responding",
-    "uploading hairball.zip", "fork() x 9 lives", "GET /api/v1/treats  200 OK", "deleting monday.exe ...",
-    "for (i = 0; i < 9; i++) lives[i].backup()", "mount /dev/fishtank /mnt/snacks", "compiling mischief.c ... done",
+    "> connecting to 185.220.101.47:22 ...", "\$ nmap -sS -p- 10.0.0.0/24 --open",
+    "PORT     STATE SERVICE", "22/tcp   open  ssh",
+    "443/tcp  open  https", "\$ ssh -i id_rsa root@10.0.0.14",
+    "Permission denied (publickey).", "\$ hydra -l admin -P rockyou.txt ssh://10.0.0.14",
+    "[22][ssh] login: admin  password: ********", "bypassing firewall ... rule 0x1F dropped",
+    "decrypt(0x3F2A9C) -> ok", "dumping /etc/shadow ...",
+    "root:\$6\$Zx9Q...:19622:0:99999:7:::", "privilege escalation: CVE-20XX-0000 ... ok",
+    "uid=0(root) gid=0(root)", "\$ curl -s http://10.0.0.14/admin.php?id=1' OR '1'='1",
+    "injecting payload stage2.bin (48 KB)", "spawning reverse shell -> 185.220.101.47:4444",
+    "keylogger attached to pid 4127", "exfiltrating /Users/*/Documents (2.3 GB)",
+    "wiping logs: /var/log/*.log", "kernel: segfault at 0x00007ffd in libsystem",
+    "ERROR 0xDEAD: process not responding", "rerouting traffic through 7 proxies",
+    "hash cracked: 5f4dcc3b5aa765d61d8327deb882cf99", "AES-256 key found: 9b2e...c41f",
+    "mounting /dev/disk2s1 /mnt/target", "GET /api/v1/users  200 OK",
+    "0101 1100 0011 1010 1110", "establishing persistence: launchd.plist",
 )
 
 private fun codeWall(r: Box, t: Float, pal: List<Int>, seed: Int, g: Gfx) {
@@ -343,7 +352,7 @@ private fun pixelText(text: String, cx: Float, cy: Float, maxWidth: Float, maxPi
 private fun blueScreen(r: Box, t: Float, pal: List<Int>, g: Gfx) {
     g.fill(r, mix(pal[2], BLACK, 0.15f))
     val percent = min(100, (t * 1.7f).toInt())
-    val lines = listOf("YOUR CAT RAN INTO A PROBLEM", "CAT.EXE HAS STOPPED", "STOP CODE: HAIRBALL", "COLLECTING CATNIP $percent%")
+    val lines = listOf("YOUR SYSTEM HAS BEEN COMPROMISED", "KERNEL PANIC: NOT SYNCING", "STOP CODE: 0XC000021A", "UPLOADING MEMORY DUMP $percent%")
     val widest = lines.maxOf { PixelFont.width(it) }.toFloat()
     val p = max(2f, min(7f, floor(r.width * 0.75f / widest)))
     val left = r.minX + r.width * 0.1f
@@ -442,7 +451,7 @@ private fun cracks(r: Box, t: Float, seed: Int, g: Gfx) {
     }
 }
 
-private val POPUP_MESSAGES = listOf("CAT.EXE IS NOT RESPONDING", "TOO MANY CATS", "OUT OF TREATS", "PURR OVERFLOW", "LITTER BOX FULL")
+private val POPUP_MESSAGES = listOf("ACCESS DENIED", "SEGMENTATION FAULT", "FIREWALL DISABLED", "DISK ENCRYPTED", "CONNECTION HIJACKED")
 
 private fun popups(r: Box, t: Float, pal: List<Int>, seed: Int, g: Gfx) {
     val shown = (t * 1.6f).toInt() + 2
@@ -623,7 +632,7 @@ private fun checker(r: Box, t: Float, pal: List<Int>, f: GlitchRandom, g: Gfx) {
     }
 }
 
-private val LOADING_LABELS = listOf("DELETING PHOTOS", "UPLOADING BRAIN", "ENCRYPTING DISK", "FEEDING CAT", "FORMATTING C:", "MINING CATNIP")
+private val LOADING_LABELS = listOf("COPYING KEYCHAIN", "UPLOADING FILES", "ENCRYPTING DISK", "CRACKING PASSWORDS", "WIPING BACKUPS", "DISABLING FIREWALL")
 
 private fun loading(r: Box, t: Float, pal: List<Int>, g: Gfx) {
     val barW = min(r.width * 0.6f, 900f)

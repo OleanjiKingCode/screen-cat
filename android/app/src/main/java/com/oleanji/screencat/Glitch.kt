@@ -18,7 +18,7 @@ enum class GlitchStyle {
     BREACH,
     // Columns of falling characters.
     MATRIX,
-    // A crash screen: ":(", "CAT.EXE HAS STOPPED" and a counting percentage.
+    // A crash screen: ":(", "SYSTEM HALTED" and a counting percentage.
     BLUE_SCREEN,
     // TV static, colour bars and "NO SIGNAL".
     NO_SIGNAL,
@@ -96,36 +96,36 @@ class Zap(val from: P, val to: P, var age: Float = 0f, var accentIndex: Int = 0)
 
 /** Fictional, harmless "hacker" lines for the scrolling code. */
 private val FAKE_CODE = listOf(
-    "> connecting to cat-net node 7 ...",
-    "$ sudo purr --force --no-mercy",
-    "inject --payload whiskers.bin",
-    "bypass firewall :: port 443 OPEN",
+    "> connecting to 185.220.101.47:22 ...",
+    "\$ nmap -sS -p- 10.0.0.0/24 --open",
+    "PORT     STATE SERVICE",
+    "22/tcp   open  ssh",
+    "443/tcp  open  https",
+    "\$ ssh -i id_rsa root@10.0.0.14",
+    "Permission denied (publickey).",
+    "\$ hydra -l admin -P rockyou.txt ssh://10.0.0.14",
+    "[22][ssh] login: admin  password: ********",
+    "bypassing firewall ... rule 0x1F dropped",
     "decrypt(0x3F2A9C) -> ok",
-    "while (true) { claw(memory); }",
-    "sector 0x7FF2 corrupted",
-    "rm -rf /system/naps/*",
-    "kernel.panic(\"too many cats\")",
-    "ssh root@app --whiskers",
-    "override AUTH_TOKEN=meow",
-    "hooking event loop ...",
-    "patching memory @ 0x0C47",
-    "exfiltrating yarn.db (2.3 MB)",
-    "access level: ROOT",
-    "for (i = 0; i < 9; i++) lives[i].backup()",
-    "segfault in app.render()",
-    "def pounce(target): return chaos",
-    "chmod 777 /dev/catnip",
-    "rewriting pixels ...",
-    "ERROR 0xDEAD: app not responding",
-    "trace: paw -> cursor -> window",
-    "SYN  SYN  SYN  ACK",
-    "compiling mischief.c ... done",
-    "mount /dev/fishtank /mnt/snacks",
-    "GET /api/v1/treats  200 OK",
-    "deleting monday.exe ...",
-    "fork() x 9 lives",
+    "dumping /etc/shadow ...",
+    "root:\$6\$Zx9Q...:19622:0:99999:7:::",
+    "privilege escalation: CVE-20XX-0000 ... ok",
+    "uid=0(root) gid=0(root)",
+    "\$ curl -s http://10.0.0.14/admin.php?id=1' OR '1'='1",
+    "injecting payload stage2.bin (48 KB)",
+    "spawning reverse shell -> 185.220.101.47:4444",
+    "keylogger attached to pid 4127",
+    "exfiltrating /Users/*/Documents (2.3 GB)",
+    "wiping logs: /var/log/*.log",
+    "kernel: segfault at 0x00007ffd in libsystem",
+    "ERROR 0xDEAD: process not responding",
+    "rerouting traffic through 7 proxies",
+    "hash cracked: 5f4dcc3b5aa765d61d8327deb882cf99",
+    "AES-256 key found: 9b2e...c41f",
+    "mounting /dev/disk2s1 /mnt/target",
+    "GET /api/v1/users  200 OK",
     "0101 1100 0011 1010 1110",
-    "uploading hairball.zip",
+    "establishing persistence: launchd.plist",
 )
 
 /**
@@ -279,7 +279,7 @@ private fun breachMatrix(b: Breach, r: Box, g: Gfx) {
 private fun breachBlueScreen(b: Breach, r: Box, g: Gfx) {
     g.fill(r, argb(1f, 20, 84, 209))
     val percent = min(100, (max(0f, b.age - 0.4f) / 2.6f * 100).toInt())
-    val lines = listOf("CAT.EXE HAS STOPPED", "STOP CODE: HAIRBALL", "COLLECTING CATNIP $percent%")
+    val lines = listOf("SYSTEM HALTED", "STOP CODE: 0XC000021A", "DUMPING MEMORY $percent%")
     val widest = (lines.maxOf { PixelFont.width(it) }).toFloat()
     val pixel = max(2f, min(6f, floor(r.width * 0.8f / widest)))
     val left = r.minX + max(12f, r.width * 0.08f)
