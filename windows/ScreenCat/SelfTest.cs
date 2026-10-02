@@ -128,8 +128,8 @@ public static class SelfTest
         // The play invite at the real on-screen scale, the bowl and the ball.
         double baseY = h - (row + 1) * cell - 120;
         var bubble = new SpeechBubble("LET'S PLAY", "OK");
-        bubble.Draw(new Vec(200, baseY + 110), Math.Max(2, Math.Round(size / 14)), palette, false, 0.4, canvas);
-        cat.Clip = Clip.SitIdle; cat.ClipTime = 0; cat.Pos = new Vec(200, baseY);
+        bubble.Draw(new Vec(260, baseY + 110), Math.Max(2, Math.Round(size / 14)), palette, false, 0.4, canvas);
+        cat.Clip = Clip.SitIdle; cat.ClipTime = 0; cat.Pos = new Vec(260, baseY);
         CatArt.DrawCat(cat, sheet, true, palette, canvas);
         CatArt.DrawHearts(cat, 0.9, palette, canvas);
         CatArt.DrawFoodBowl(new Vec(420, baseY), cat.PixelScale, palette, 1, canvas);
