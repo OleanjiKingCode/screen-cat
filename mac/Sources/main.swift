@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The idle crawl's full-screen glitch, under the cat.
     private var takeover: TakeoverView!
     private var takeoverFrame = 0
+    private let zeroDaySound = ZeroDaySound()
     private var shownRecipe = -1
     private var statusItem: NSStatusItem!
     private let scene = Scene()
@@ -399,6 +400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         config.activates = true
         NSWorkspace.shared.openApplication(at: url, configuration: config)
         switchedApps = true
+        zeroDaySound.hop()
         ActivityLog.shared.cat("hopped to \(next.localizedName ?? "an app") (\(places) to the \(side > 0 ? "right" : "left"))")
         return true
     }
@@ -452,7 +454,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // mode stays what it was.
         if sender.tag == 502 {
             ActivityLog.shared.cat("Zero Day started from the menu")
-            beginIdleCrawl(grace: 3.2, routine: .zeroDay)
+            // No countdown: it starts at once, and input in the first 1.5 s
+            // (letting go of the trackpad after the click) does not count.
+            beginIdleCrawl(grace: 1.5, routine: .zeroDay)
             return
         }
         setMode(sender.tag == 501 ? "crawler" : "normal")
@@ -533,11 +537,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         takeoverFrame += 1
         // Zero Day moves fast, so it renders at 30 fps; the idle crawl at 20.
         guard takeoverFrame % (idle.catless ? 2 : 3) == 0 else { return }
-        if idle.countdownLeft > 0 {
-            takeover.show(countdownRecipe(Int(ceil(idle.countdownLeft))), time: idle.countdownLeft, seed: 7,
-                          pulse: 0, opacity: 1)
-            return
-        }
         if idle.takeoverOpacity <= 0.01 {
             takeover.clear()
             return
@@ -683,6 +682,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scene.cat.wearing = pickOutfit(scene.config)
         // A hacker wears shades.
         if [.crawl, .idleCrawl, .zeroDay].contains(routine) { scene.cat.wearing.insert(.glasses) }
+        // The invisible self-test stays silent too.
+        if routine == .zeroDay, scene.config.zeroDaySound, !CommandLine.arguments.contains("--idle-selftest") {
+            zeroDaySound.start(volume: Float(scene.config.zeroDayVolume))
+        }
         if let idle = behavior as? IdleCrawlBehavior {
             idle.requestTargets = { [weak self] in
                 guard let self else { return [] }
@@ -729,6 +732,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view?.aura = nil
         takeover?.clear()
         shownRecipe = -1
+        zeroDaySound.stop()
         petDwell = 0
         petLeft = 0
         petArmed = true
@@ -756,6 +760,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if idle.isExiting, !exitHandled {
                 exitHandled = true
                 takeover.clear()
+                zeroDaySound.stop()
                 returnToStartApp()
             }
         }
@@ -907,6 +912,11 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--preview" {
 
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--takeover" {
     renderTakeoverSheet(to: CommandLine.arguments[2])
+    exit(0)
+}
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--zeroday-sound" {
+    ZeroDaySound.writeSample(to: CommandLine.arguments[2],
+                             seconds: CommandLine.arguments.count >= 4 ? Double(CommandLine.arguments[3]) ?? 10 : 10)
     exit(0)
 }
 if CommandLine.arguments.contains("--takeover-bench") {

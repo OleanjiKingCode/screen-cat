@@ -698,7 +698,7 @@ func makeBehavior(_ routine: Routine, scene: Scene) -> Behavior {
 
     case .zeroDay:
         return IdleCrawlBehavior(scene: scene, targets: scene.crawlTargets, speed: scene.config.zeroDaySpeed,
-                                 maxDuration: 180, countdown: 3, catless: true)
+                                 maxDuration: 180, catless: true)
 
     case .stroll:
         let start = entryPoint(scene, size: size)

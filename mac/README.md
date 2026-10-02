@@ -122,15 +122,19 @@ display sleeps. Only real hardware input counts. **Crawl until I touch
 something** starts one now. `idleCrawl: false` turns it off.
 
 **Zero Day.** **Mode > Zero Day (3 min hack, starts now)** is a three-minute
-hacked-computer show with no cat at all. After a three-second "ZERO DAY IN 3"
-countdown (so the click that started it does not stop it), the whole screen
-glitches at `zeroDaySpeed` (8x) with bursts of red flashes, rendering at 30 fps.
-Every 1.5 to 3 seconds it jumps to a random app one to three places left or
-right (the third app to the left, then the second to the right, and so on);
-macOS slides to it, the glitch dims for 0.8 s so you glimpse the app, then a
-new style takes over. It ends after three minutes or at the first touch, with
-the glitch gone at once and you back in the app you started in. It does not
-change the saved mode. `--idle-selftest zeroday` runs it invisibly.
+hacked-computer show with no cat at all. It starts the moment you pick it (input
+in the first 1.5 seconds, letting go of the trackpad, does not count). The whole
+screen glitches at `zeroDaySpeed` (8x) with bursts of red flashes, rendering at
+30 fps, over a quiet background sound made live by the app: a low throbbing
+drone, quick data beeps, bursts of static crackle and a rising whoosh on every
+hop (`zeroDaySound`, `zeroDayVolume` 0.25). Every 1.5 to 3 seconds it jumps to
+a random app one to three places left or right (the third app to the left,
+then the second to the right, and so on); macOS slides to it, the glitch dims
+for 0.8 s so you glimpse the app, then a new style takes over. It ends after
+three minutes or at the first touch, with the glitch and sound gone at once and
+you back in the app you started in. It does not change the saved mode.
+`--idle-selftest zeroday` runs it invisibly and silently;
+`--zeroday-sound out.wav [seconds]` writes the sound to a file.
 
 The glitch renders at half resolution, 20 frames a second, on its own layer
 under the cat; the slowest style takes about 12 ms a frame. See every style:
@@ -315,6 +319,8 @@ it, and those are never requested.
 | `glitchStyleSeconds` | `60` | How long each full-screen glitch style plays at speed 1. At least `5`. |
 | `glitchSpeed` | `2` | How fast the idle crawl's glitches animate and change. |
 | `zeroDaySpeed` | `8` | The same for Zero Day. |
+| `zeroDaySound` | `true` | Play Zero Day's background sound. |
+| `zeroDayVolume` | `0.25` | How loud it is, `0` to `1`. |
 | `activityLog` | `true` | Keep the daily activity log in `~/Library/Logs/ScreenCat`. |
 | `activityLogDays` | `30` | Delete day files older than this. `0` keeps them forever. |
 | `opacity` | `1.0` | Overall transparency, `0.1` to `1.0`. |

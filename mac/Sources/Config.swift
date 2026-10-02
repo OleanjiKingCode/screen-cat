@@ -111,6 +111,9 @@ struct Config {
     /// at `zeroDaySpeed`.
     var glitchSpeed: CGFloat = 2
     var zeroDaySpeed: CGFloat = 8
+    /// Zero Day's background sound, and how loud it is (0 to 1).
+    var zeroDaySound = true
+    var zeroDayVolume: CGFloat = 0.25
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary of apps, sleep, Bluetooth and what is running,
@@ -200,6 +203,8 @@ struct Config {
         c.glitchStyleSeconds    = num("glitchStyleSeconds")    ?? c.glitchStyleSeconds
         c.glitchSpeed           = num("glitchSpeed")           ?? c.glitchSpeed
         c.zeroDaySpeed          = num("zeroDaySpeed")          ?? c.zeroDaySpeed
+        c.zeroDaySound          = bool("zeroDaySound")         ?? c.zeroDaySound
+        c.zeroDayVolume         = num("zeroDayVolume")         ?? c.zeroDayVolume
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
         c.activityLogDays       = num("activityLogDays")       ?? c.activityLogDays
@@ -227,6 +232,7 @@ struct Config {
         c.glitchStyleSeconds = max(5, c.glitchStyleSeconds)
         c.glitchSpeed = max(0.25, min(16, c.glitchSpeed))
         c.zeroDaySpeed = max(1, min(16, c.zeroDaySpeed))
+        c.zeroDayVolume = max(0, min(1, c.zeroDayVolume))
         c.growScale = max(1, min(4, c.growScale))
         c.chainChance = max(0, min(1, c.chainChance))
         c.glassesChance = max(0, min(1, c.glassesChance))
@@ -299,6 +305,8 @@ struct Config {
             "glitchStyleSeconds": d.glitchStyleSeconds,
             "glitchSpeed": d.glitchSpeed,
             "zeroDaySpeed": d.zeroDaySpeed,
+            "zeroDaySound": d.zeroDaySound,
+            "zeroDayVolume": d.zeroDayVolume,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,
