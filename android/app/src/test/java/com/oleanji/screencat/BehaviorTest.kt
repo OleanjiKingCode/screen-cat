@@ -131,25 +131,61 @@ class BehaviorTest {
     }
 
     @Test
-    fun mrRobotCountsDownThenEndsAfterThreeMinutes() {
+    fun mrRobotNeverShowsTheCatHopsAndEndsAfterThreeMinutes() {
         val s = scene()
         val robot = makeBehavior(Routine.MR_ROBOT, s) as IdleCrawlBehavior
-        assertFalse(s.cat.visible)
+        assertTrue(robot.catless)
         assertTrue(robot.countdownLeft > 2.9f)
         var t = 0f
         var done = false
         var styleChanges = 0
         var lastStyle = robot.recipeIndex
+        var hops = 0
+        var wasHopping = false
+        var sawFull = false
+        var minAfterFull = 1f
         while (!done && t < 190f) {
             s.cat.advance(dt)
             done = robot.update(dt, s)
             t += dt
-            if (t > 3.1f && t < 3.2f) assertTrue(s.cat.visible)
+            assertFalse("cat showed at $t", s.cat.visible)
+            // Fades in over 0.3 s once the countdown is over.
+            if (t > 3.4f && t < 4f) assertTrue(robot.takeoverOpacity >= 0.99f)
+            if (robot.takeoverOpacity >= 0.99f) sawFull = true
+            if (sawFull && !done) minAfterFull = minOf(minAfterFull, robot.takeoverOpacity)
+            val hopping = robot.stageName == "hopping"
+            if (hopping && !wasHopping) hops++
+            wasHopping = hopping
             if (robot.recipeIndex != lastStyle) { styleChanges++; lastStyle = robot.recipeIndex }
         }
         assertTrue(done)
-        assertTrue("ended at $t", t in 180f..182f)
-        // A style every 15 s over about two and a half minutes of glitch.
-        assertTrue("only $styleChanges style changes", styleChanges >= 8)
+        assertTrue("ended at $t", t in 180f..181f)
+        // A hop every 4 to 7 s plus 1.3 s of dim, over 177 s of glitch.
+        assertTrue("only $hops hops", hops in 20..35)
+        assertTrue("dimmed to $minAfterFull during hops", minAfterFull in 0.24f..0.26f)
+        assertTrue("only $styleChanges style changes", styleChanges >= hops)
+    }
+
+    @Test
+    fun mrRobotTouchEndsAtOnceWithNoShrink() {
+        val s = scene()
+        val robot = makeBehavior(Routine.MR_ROBOT, s) as IdleCrawlBehavior
+        var t = 0f
+        while (t < 10f) { s.cat.advance(dt); robot.update(dt, s); t += dt }
+        robot.beginExit()
+        assertEquals(0f, robot.takeoverOpacity, 0f)
+        assertTrue("did not end on the next frame", robot.update(dt, s))
+        assertFalse(s.cat.visible)
+    }
+
+    @Test
+    fun noCatThemeLeftInTheGlitches() {
+        val names = GLITCH_RECIPES.map { it.name }
+        for (gone in listOf("Blue Screen of Meow", "Meow Wall", "Cat Virus", "Cat OS Crash", "Gold Rush", "Error 404")) {
+            assertFalse(gone, names.contains(gone))
+        }
+        for (now in listOf("Kernel Panic", "Root Wall", "Worm Outbreak", "Fatal Exception", "Ransomware", "Access Denied")) {
+            assertTrue(now, names.contains(now))
+        }
     }
 }
