@@ -101,6 +101,12 @@ let glitchRecipes: [GlitchRecipe] = [
     GlitchRecipe(name: "Total Chaos", dim: 0.72, layers: [.blocks, .slices, .tears, .popups, .cracks], palette: synth),
 ]
 
+/// The "starting in" screen before Mr. Robot. `n` is the seconds left.
+func countdownRecipe(_ n: Int) -> GlitchRecipe {
+    GlitchRecipe(name: "Countdown", dim: 0.6, layers: [.scanlines, .tears, .bigText(["MR. ROBOT IN \(n)", "\(n)"])],
+                 palette: toxic)
+}
+
 // MARK: - Rendering
 
 /// Paints one frame of `recipe`, `t` seconds in, filling `r`. Needs a current

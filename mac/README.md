@@ -114,10 +114,19 @@ climbs), stops at windows and zaps them, which flashes the screen. At the edge
 of the screen it brings the next app forward, so macOS slides to it like a
 three-finger swipe. The glitch drops for that moment, so you see the new screen
 normally while the cat walks in, then a new style takes over. The first touch
-or key press ends it and takes you back to the app you left. It does not start
+or key press ends it: the glitch goes at once, the cat shrinks away to nothing,
+and you are back in the app you left. Normal visits carry on after that. It does not start
 while a blocked app (video) is in front or fullscreen, and stops when the
 display sleeps. Only real hardware input counts. **Crawl until I touch
 something** starts one now. `idleCrawl: false` turns it off.
+
+**Mr. Robot.** **Mode > Mr. Robot (3 min hack, starts now)** runs the same
+takeover as a three-minute show: a three-second "MR. ROBOT IN 3" countdown (so
+the click that started it does not stop it), then the glitches at four times
+the speed, a new style every 15 seconds, and a faster cat that hops to the next
+app after one window. It ends after three minutes or at the first touch, with
+the same shrink-away exit. It does not change the saved mode.
+`--idle-selftest mrrobot` runs it invisibly.
 
 The glitch renders at half resolution, 20 frames a second, on its own layer
 under the cat; the slowest style takes about 12 ms a frame. See every style:

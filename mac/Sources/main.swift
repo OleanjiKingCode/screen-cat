@@ -50,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The app in front when it began, to go back to when you return.
     private var appBeforeCrawl: NSRunningApplication?
     private var switchedApps = false
+    /// The shrink-away exit has already put you back in your app.
+    private var exitHandled = false
 
     /// `--selftest <png>`: run the real on-screen window, force a walk, then
     /// photograph our own window to prove what actually reached the screen.
@@ -137,19 +139,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // quit. Nothing shows on screen and no app is switched.
         if CommandLine.arguments.contains("--idle-selftest") {
             idleTimer?.invalidate()
-            beginIdleCrawl(grace: .greatestFiniteMagnitude)
+            // `--idle-selftest mrrobot` runs Mr. Robot instead. Either way, at
+            // 11s it acts as if you touched the trackpad, to test the exit.
+            let robot = CommandLine.arguments.contains("mrrobot")
+            beginIdleCrawl(grace: .greatestFiniteMagnitude, routine: robot ? .mrRobot : .idleCrawl)
             window.alphaValue = 0
             (behavior as? IdleCrawlBehavior)?.requestNextApp = nil
             var seconds = 0
             Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                guard let self, let idle = self.behavior as? IdleCrawlBehavior else { exit(1) }
+                guard let self else { exit(1) }
+                guard let idle = self.behavior as? IdleCrawlBehavior else {
+                    print("exited: cat gone, glitch \(self.takeover.layer?.contents == nil ? "cleared" : "STILL SHOWING")")
+                    exit(0)
+                }
                 seconds += 1
+                if seconds == 11 { idle.beginExit() }
                 print(String(format: "%2ds  stage %@  cat %.0fpt at %.0f,%.0f  glitch %.2f  style %@  layer %@  image %@",
                              seconds, idle.stageName, self.scene.cat.size, self.scene.cat.pos.x, self.scene.cat.pos.y,
                              idle.takeoverOpacity, glitchRecipes[idle.recipeIndex].name,
                              NSStringFromRect(self.takeover.frame),
                              self.takeover.layer?.contents == nil ? "none" : "yes"))
-                if seconds >= 14 { exit(0) }
+                if seconds >= 16 { print("did not exit"); exit(1) }
             }
             return
         }
@@ -249,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "Crawl until I touch something", action: #selector(runIdleCrawl), keyEquivalent: "")
         menu.addItem(.separator())
         let modes = NSMenu()
-        for (tag, title) in [(500, "Normal"), (501, "Crawler")] {
+        for (tag, title) in [(500, "Normal"), (501, "Crawler"), (502, "Mr. Robot (3 min hack, starts now)")] {
             let item = NSMenuItem(title: title, action: #selector(pickMode(_:)), keyEquivalent: "")
             item.tag = tag
             item.target = self
@@ -336,13 +346,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         beginIdleCrawl(grace: 0)
     }
 
-    private func beginIdleCrawl(grace: CFAbsoluteTime) {
+    private func beginIdleCrawl(grace: CFAbsoluteTime, routine: Routine = .idleCrawl) {
         appBeforeCrawl = NSWorkspace.shared.frontmostApplication
         switchedApps = false
+        exitHandled = false
         idleCrawlStarted = CFAbsoluteTimeGetCurrent()
         idleCrawlGrace = grace
         ActivityLog.shared.cat("idle crawl started")
-        start(.idleCrawl, force: grace > 0)
+        start(routine, force: grace > 0)
     }
 
     /// True once there has been real input since the crawl began.
@@ -355,7 +366,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func endIdleCrawl(reason: String) {
         ActivityLog.shared.cat("idle crawl ended: \(reason)")
         stopBehavior()
-        // Put you back in the app you left, if the crawl swiped away from it.
+        returnToStartApp()
+        if !paused && !away { scheduleNext() }
+    }
+
+    /// Put you back in the app you left, if the crawl swiped away from it.
+    private func returnToStartApp() {
         if switchedApps, let app = appBeforeCrawl, !app.isTerminated {
             if let url = app.bundleURL {
                 let config = NSWorkspace.OpenConfiguration()
@@ -365,7 +381,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         appBeforeCrawl = nil
         switchedApps = false
-        if !paused && !away { scheduleNext() }
     }
 
     /// The three-finger swipe. Brings the next app forward, in name order in
@@ -407,6 +422,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func pickMode(_ sender: NSMenuItem) {
+        // Mr. Robot is a show, not a lasting mode: it runs once and the saved
+        // mode stays what it was.
+        if sender.tag == 502 {
+            ActivityLog.shared.cat("Mr. Robot started from the menu")
+            beginIdleCrawl(grace: 3.2, routine: .mrRobot)
+            return
+        }
         setMode(sender.tag == 501 ? "crawler" : "normal")
     }
 
@@ -484,6 +506,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         takeoverFrame += 1
         guard takeoverFrame % 3 == 0 else { return }
+        if idle.countdownLeft > 0 {
+            takeover.show(countdownRecipe(Int(ceil(idle.countdownLeft))), time: idle.countdownLeft, seed: 7,
+                          pulse: 0, opacity: 1)
+            return
+        }
         if idle.takeoverOpacity <= 0.01 {
             takeover.clear()
             return
@@ -606,11 +633,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Begging faces the viewer, so it only makes sense the right way up.
         // Begging and the play invite both face you and need a clickable
         // bubble the right way up, so they stay on the bottom edge.
-        let mayUseWall = routine != .hungry && routine != .play && routine != .crawl && routine != .idleCrawl
+        let mayUseWall = routine != .hungry && routine != .play && routine != .crawl
+            && routine != .idleCrawl && routine != .mrRobot
             && Double.random(in: 0..<1) < scene.config.wallChance
         let surface: Surface = mayUseWall ? (Bool.random() ? .left : .right) : .bottom
         scene.setStage(surface: surface, screen: screen.visibleFrame, catSize: scene.cat.size)
-        if routine == .idleCrawl { scene.crawlTargets = crawlTargets(on: screen) }
+        if routine == .idleCrawl || routine == .mrRobot { scene.crawlTargets = crawlTargets(on: screen) }
         if routine == .crawl {
             scene.crawlTargets = crawlTargets(on: screen)
             // Nothing to break on this screen: just take a walk.
@@ -627,7 +655,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         forced = force
         scene.cat.wearing = pickOutfit(scene.config)
         // A hacker wears shades.
-        if routine == .crawl || routine == .idleCrawl { scene.cat.wearing.insert(.glasses) }
+        if [.crawl, .idleCrawl, .mrRobot].contains(routine) { scene.cat.wearing.insert(.glasses) }
         if let idle = behavior as? IdleCrawlBehavior {
             idle.requestTargets = { [weak self] in
                 guard let self else { return [] }
@@ -690,9 +718,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let dt = CGFloat(min(0.05, max(0.001, now - lastTick)))
         lastTick = now
 
-        if behavior is IdleCrawlBehavior, touchedSinceIdleCrawl() {
-            endIdleCrawl(reason: "you are back")
-            return
+        // A touch or key: the glitch goes at once and the cat shrinks away.
+        // Mr. Robot ending on time takes the same exit.
+        if let idle = behavior as? IdleCrawlBehavior {
+            if !idle.isExiting, touchedSinceIdleCrawl() {
+                ActivityLog.shared.cat("idle crawl ended: you are back")
+                idle.beginExit()
+            }
+            if idle.isExiting, !exitHandled {
+                exitHandled = true
+                takeover.clear()
+                returnToStartApp()
+            }
         }
 
         // If a video starts mid-routine, get out of the way at once.

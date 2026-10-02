@@ -17,7 +17,7 @@ import AppKit
 /// as it goes up, so up reads as further away, and it never moves steeper than
 /// `maxSlope`, zig-zagging up anything steeper instead of rising straight.
 final class IdleCrawlBehavior: Behavior, BreachSource {
-    private enum Stage { case entering, growing, moving, zapping, resting, switching, arriving }
+    private enum Stage { case countdown, entering, growing, moving, zapping, resting, switching, arriving, exiting }
     private var stage: Stage = .entering
     /// For `--idle-selftest` and the log.
     var stageName: String { "\(stage)" }
@@ -36,7 +36,21 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     private var timer: CGFloat = 0
     private var growTime: CGFloat = 0
     private var baseSize: CGFloat = 0
-    private let growDuration: CGFloat = 3
+    private var growDuration: CGFloat { speed > 1 ? 1 : 3 }
+
+    /// 1 for the idle crawl. Mr. Robot runs at 4: glitches animate and change
+    /// four times as fast, and the cat moves twice as fast and hops screens
+    /// after one stop instead of wandering each one.
+    let speed: CGFloat
+    /// Ends by itself after this many seconds (Mr. Robot's three minutes).
+    let maxDuration: CGFloat?
+    private var elapsed: CGFloat = 0
+    /// Seconds left on the "starting in" countdown, so the click that started
+    /// it is over before any touch can end it.
+    private(set) var countdownLeft: CGFloat = 0
+    private var exitTime: CGFloat = 0
+    private var exitStartSize: CGFloat = 0
+    var isExiting: Bool { stage == .exiting }
 
     private(set) var breaches: [Breach] = []
     private(set) var zap: Zap?
@@ -55,7 +69,10 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     /// Bring the next app forward in this direction. True if it did.
     var requestNextApp: ((CGFloat) -> Bool)?
 
-    init(scene: Scene, targets: [CGRect]) {
+    init(scene: Scene, targets: [CGRect], speed: CGFloat = 1, maxDuration: CGFloat? = nil,
+         countdown: CGFloat = 0) {
+        self.speed = speed
+        self.maxDuration = maxDuration
         let cat = scene.cat
         baseSize = cat.size
         let start = entryPoint(scene, size: cat.size)
@@ -63,7 +80,27 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
         cat.visible = true
         direction = start.x < scene.stage.midX ? 1 : -1
         walkIn(scene)
+        if countdown > 0 {
+            countdownLeft = countdown
+            cat.visible = false
+            stage = .countdown
+        }
     }
+
+    /// Any touch, or the end of Mr. Robot: the glitch goes at once, and the
+    /// cat shrinks away to nothing where it stands.
+    func beginExit() {
+        guard stage != .exiting else { return }
+        stage = .exiting
+        takeoverOn = false
+        takeoverOpacity = 0
+        zap = nil
+        aura = nil
+        exitTime = 0
+        exitStartSize = sceneCatSize
+    }
+    /// Kept so `beginExit` can be called from outside an update.
+    private var sceneCatSize: CGFloat = 0
 
     /// From off the side to a spot a quarter of the way in, on a normal screen.
     private func walkIn(_ scene: Scene) {
@@ -88,12 +125,14 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     private func planStops(_ windows: [CGRect], _ scene: Scene) {
         let s = scene.stage
         let top = s.maxY - scene.cat.size * 1.3
+        // Mr. Robot hops screens fast: one window, no wandering.
+        let windows = speed > 1 ? Array(windows.prefix(1)) : windows
         var list: [Stop] = windows.map { w in
             let inset = min(scene.cat.size, w.width / 3)
             return Stop(point: CGPoint(x: CGFloat.random(in: (w.minX + inset)...(w.maxX - inset)),
                                        y: min(max(w.minY, s.minY), top)), window: w)
         }
-        for _ in 0..<Int.random(in: 2...3) {
+        for _ in 0..<(speed > 1 ? (windows.isEmpty ? 1 : 0) : Int.random(in: 2...3)) {
             list.append(Stop(point: CGPoint(x: CGFloat.random(in: (s.minX + s.width * 0.1)...(s.maxX - s.width * 0.1)),
                                             y: CGFloat.random(in: s.minY...max(s.minY, top))), window: nil))
         }
@@ -122,12 +161,34 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
         // Fades in over 1.2s, out over 0.4s so the next screen shows promptly.
         takeoverOpacity = takeoverOn ? min(1, takeoverOpacity + dt / 1.2) : max(0, takeoverOpacity - dt / 0.4)
         if takeoverOpacity > 0 {
-            styleTime += dt
+            styleTime += dt * speed
             if styleTime >= scene.config.glitchStyleSeconds { nextStyle() }
         }
         let cat = scene.cat
+        sceneCatSize = cat.size
+        elapsed += dt
+        if let maxDuration, elapsed >= maxDuration, stage != .exiting { beginExit() }
 
         switch stage {
+        case .countdown:
+            countdownLeft -= dt
+            if countdownLeft <= 0 {
+                countdownLeft = 0
+                cat.visible = true
+                stage = .entering
+            }
+
+        case .exiting:
+            guard cat.visible else { return true }
+            exitTime += dt
+            let t = min(1, exitTime / 0.8)
+            // Shrinks slowly, then fast, and is gone.
+            cat.size = max(1, exitStartSize * (1 - t * t))
+            if t >= 1 {
+                cat.visible = false
+                return true
+            }
+
         case .entering, .arriving:
             if roam(toward: goal, scene, dt) {
                 if stage == .entering {
@@ -235,7 +296,8 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
 
         let slope = max(0.05, scene.config.maxSlope)
         let hurrying = distance > cat.drawnSize * 6
-        let pace = cat.drawnSize * (hurrying ? scene.config.runSpeed * 0.7 : scene.config.walkSpeed * 1.3)
+        let boost: CGFloat = speed > 1 ? 2 : 1
+        let pace = boost * cat.drawnSize * (hurrying ? scene.config.runSpeed * 0.7 : scene.config.walkSpeed * 1.3)
         var step = pace * dt
         let vx: CGFloat, vy: CGFloat
         let margin = cat.drawnSize * 0.6
