@@ -518,7 +518,7 @@ fun makeBehavior(routine: Routine, scene: Scene): Behavior {
         Routine.HUNGRY -> HungryBehavior(scene)
         Routine.CRAWL -> CrawlBehavior(scene, scene.crawlTargets)
         Routine.IDLE_CRAWL -> IdleCrawlBehavior(scene)
-        Routine.MR_ROBOT -> IdleCrawlBehavior(scene, speed = 4f, maxDuration = 180f, countdown = 3f)
+        Routine.MR_ROBOT -> IdleCrawlBehavior(scene, speed = 4f, maxDuration = 180f, countdown = 3f, catless = true)
         Routine.STROLL -> {
             val start = entryPoint(scene, size)
             cat.pos = start.copy()

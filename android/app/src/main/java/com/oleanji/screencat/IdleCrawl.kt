@@ -28,14 +28,22 @@ import kotlin.random.Random
 class IdleCrawlBehavior(
     scene: Scene,
     // 1 for the idle crawl. Mr. Robot runs at 4: glitches animate and change
-    // four times as fast, and the cat moves twice as fast and turns round
-    // after one stop instead of wandering each one.
+    // four times as fast.
     val speed: Float = 1f,
     // Ends by itself after this many seconds (Mr. Robot's three minutes).
     private val maxDuration: Float? = null,
     countdown: Float = 0f,
+    // Mr. Robot: no cat at all. The screen glitches with bursts of flashes,
+    // and every few seconds it "hops": the glitch dims for a moment, then a
+    // new style takes over. The Mac brings a random app forward on each hop;
+    // Android cannot switch apps for us, so here the hop is the dim alone.
+    val catless: Boolean = false,
 ) : Behavior, BreachSource {
-    private enum class Stage { COUNTDOWN, ENTERING, GROWING, MOVING, ZAPPING, RESTING, EXITING }
+    private enum class Stage {
+        COUNTDOWN, ENTERING, GROWING, MOVING, ZAPPING, RESTING, EXITING,
+        // Mr. Robot only: glitch on, then hop.
+        HACKING, HOPPING,
+    }
     private var stage = Stage.ENTERING
     val stageName get() = stage.name.lowercase()
 
@@ -57,6 +65,7 @@ class IdleCrawlBehavior(
     // is over before any touch can end it.
     var countdownLeft = 0f
         private set
+    private var burstTimer = 0f
     private var exitTime = 0f
     private var exitStartSize = 0f
     val isExiting get() = stage == Stage.EXITING
@@ -175,8 +184,12 @@ class IdleCrawlBehavior(
     override fun update(dt: Float, scene: Scene): Boolean {
         zap?.let { it.age += dt }
         pulse = max(0f, pulse - dt * 1.5f)
-        // Fades in over 1.2s, out over 0.4s.
-        takeoverOpacity = if (takeoverOn) min(1f, takeoverOpacity + dt / 1.2f) else max(0f, takeoverOpacity - dt / 0.4f)
+        // Fades in over 1.2s (0.3s for Mr. Robot), out over 0.4s. While Mr.
+        // Robot hops it only dims to a quarter, then the new style comes in.
+        val level = if (takeoverOn) (if (stage == Stage.HOPPING) 0.25f else 1f) else 0f
+        val rise = if (catless) 0.3f else 1.2f
+        takeoverOpacity = if (takeoverOpacity < level) min(level, takeoverOpacity + dt / rise)
+                          else max(level, takeoverOpacity - dt / 0.4f)
         if (takeoverOpacity > 0) {
             styleTime += dt * speed
             if (styleTime >= scene.config.glitchStyleSeconds) nextStyle()
@@ -186,18 +199,47 @@ class IdleCrawlBehavior(
         elapsed += dt
         val limit = maxDuration
         if (limit != null && elapsed >= limit && stage != Stage.EXITING) beginExit()
+        if (catless) cat.visible = false
 
         when (stage) {
             Stage.COUNTDOWN -> {
                 countdownLeft -= dt
                 if (countdownLeft <= 0) {
                     countdownLeft = 0f
-                    cat.visible = true
-                    stage = Stage.ENTERING
+                    if (catless) {
+                        takeoverOn = true
+                        nextStyle()
+                        timer = rnd(4f, 7f)
+                        stage = Stage.HACKING
+                    } else {
+                        cat.visible = true
+                        stage = Stage.ENTERING
+                    }
+                }
+            }
+            Stage.HACKING -> {
+                timer -= dt
+                burstTimer -= dt
+                if (burstTimer <= 0) {
+                    pulse = rnd(0.5f, 1f)
+                    burstTimer = rnd(0.5f, 1.5f)
+                }
+                if (timer <= 0) {
+                    timer = 1.3f
+                    stage = Stage.HOPPING
+                }
+            }
+            Stage.HOPPING -> {
+                timer -= dt
+                if (timer <= 0) {
+                    nextStyle()
+                    timer = rnd(4f, 7f)
+                    stage = Stage.HACKING
                 }
             }
             Stage.EXITING -> {
-                if (!cat.visible) return true
+                // No cat to shrink in Mr. Robot: it is over at once.
+                if (!cat.visible || catless) return true
                 exitTime += dt
                 val t = min(1f, exitTime / 0.8f)
                 // Shrinks slowly, then fast, and is gone.
