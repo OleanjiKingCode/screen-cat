@@ -101,7 +101,7 @@ mode drives both, and it is saved as `mode` in the settings.
   touched. Windows of apps on `blockedApps`, and windows mostly hidden behind
   others, are skipped. **Break some apps (crawler)** runs one now in any mode.
 
-**Idle crawl.** After `idleCrawlSeconds` (120) with no mouse, trackpad or
+**Idle crawl.** After `idleCrawlSeconds` (1800, half an hour) with no mouse, trackpad or
 keyboard input, in **any** mode (normal included), the cat walks onto the
 screen, stops, and grows to `growScale` (2x) in pulses inside a ring of light.
 Then the **whole screen** (menu bar and Dock too) turns into a glitch, and
@@ -314,7 +314,7 @@ it, and those are never requested.
 | `mode` | `normal` | `normal` or `crawler`. Also set from the menu and the playground. |
 | `crawlChance` | `0.7` | In crawler mode, the chance a visit is a crawl. |
 | `idleCrawl` | `true` | Start the nonstop crawl when you leave the Mac alone. |
-| `idleCrawlSeconds` | `120` | How long with no input before it starts. At least `15`. |
+| `idleCrawlSeconds` | `1800` | How long with no input before it starts (30 minutes). At least `15`. Keep it below the display sleep time, or the screen goes off first. |
 | `growScale` | `2` | How big the cat grows when the idle crawl starts, `1` to `4`. |
 | `glitchStyleSeconds` | `60` | How long each full-screen glitch style plays at speed 1. At least `5`. |
 | `glitchSpeed` | `2` | How fast the idle crawl's glitches animate and change. |

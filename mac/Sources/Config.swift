@@ -101,7 +101,7 @@ struct Config {
     /// Start the nonstop crawl after this long with no mouse, trackpad or
     /// keyboard input, whatever the mode. Any input stops it.
     var idleCrawl = true
-    var idleCrawlSeconds: CGFloat = 120
+    var idleCrawlSeconds: CGFloat = 1800
     /// How big the cat grows when the idle crawl starts, with a glow you can
     /// watch, before the screen turns into a glitch.
     var growScale: CGFloat = 2
