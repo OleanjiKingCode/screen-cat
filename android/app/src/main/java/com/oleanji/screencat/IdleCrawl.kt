@@ -27,13 +27,14 @@ import kotlin.random.Random
  */
 class IdleCrawlBehavior(
     scene: Scene,
-    // 1 for the idle crawl. Mr. Robot runs at 4: glitches animate and change
-    // four times as fast.
+    // 1 for the idle crawl, whose glitch clock runs at `glitchSpeed`. Zero Day
+    // runs at `zeroDaySpeed` (8): its glitches animate and change that much
+    // faster.
     val speed: Float = 1f,
-    // Ends by itself after this many seconds (Mr. Robot's three minutes).
+    // Ends by itself after this many seconds (Zero Day's three minutes).
     private val maxDuration: Float? = null,
     countdown: Float = 0f,
-    // Mr. Robot: no cat at all. The screen glitches with bursts of flashes,
+    // Zero Day: no cat at all. The screen glitches with bursts of flashes,
     // and every few seconds it "hops": the glitch dims for a moment, then a
     // new style takes over. The Mac brings a random app forward on each hop;
     // Android cannot switch apps for us, so here the hop is the dim alone.
@@ -41,7 +42,7 @@ class IdleCrawlBehavior(
 ) : Behavior, BreachSource {
     private enum class Stage {
         COUNTDOWN, ENTERING, GROWING, MOVING, ZAPPING, RESTING, EXITING,
-        // Mr. Robot only: glitch on, then hop.
+        // Zero Day only: glitch on, then hop.
         HACKING, HOPPING,
     }
     private var stage = Stage.ENTERING
@@ -112,7 +113,7 @@ class IdleCrawlBehavior(
     }
 
     /**
-     * Any touch, or the end of Mr. Robot: the glitch goes at once, and the cat
+     * Any touch, or the end of Zero Day: the glitch goes at once, and the cat
      * shrinks away to nothing where it stands.
      */
     fun beginExit() {
@@ -152,13 +153,14 @@ class IdleCrawlBehavior(
     private fun planStops(windowsIn: List<Box>, scene: Scene) {
         val s = scene.stage
         val top = s.maxY - scene.cat.size * 1.3f
-        // Mr. Robot turns fast: one area, no wandering.
-        val windows = if (speed > 1) windowsIn.take(1) else windowsIn
+        // Zero Day turns fast: one area, no wandering. The idle crawl visits
+        // at most two areas and one open spot, then heads for the edge.
+        val windows = if (speed > 1) windowsIn.take(1) else windowsIn.take(2)
         val list = windows.map { w ->
             val inset = min(scene.cat.size, w.width / 3)
             Stop(P(rnd(w.minX + inset, w.maxX - inset), min(max(w.minY, s.minY), top)), w)
         }.toMutableList()
-        val extra = if (speed > 1) (if (windows.isEmpty()) 1 else 0) else rndInt(2, 3)
+        val extra = if (speed > 1) (if (windows.isEmpty()) 1 else 0) else 1
         repeat(extra) {
             list.add(Stop(P(rnd(s.minX + s.width * 0.1f, s.maxX - s.width * 0.1f), rnd(s.minY, max(s.minY, top))), null))
         }
@@ -184,14 +186,16 @@ class IdleCrawlBehavior(
     override fun update(dt: Float, scene: Scene): Boolean {
         zap?.let { it.age += dt }
         pulse = max(0f, pulse - dt * 1.5f)
-        // Fades in over 1.2s (0.3s for Mr. Robot), out over 0.4s. While Mr.
-        // Robot hops it only dims to a quarter, then the new style comes in.
+        // Fades in over 1.2s (0.3s for Zero Day), out over 0.4s. While Zero
+        // Day hops it only dims to a quarter, then the new style comes in.
         val level = if (takeoverOn) (if (stage == Stage.HOPPING) 0.25f else 1f) else 0f
         val rise = if (catless) 0.3f else 1.2f
         takeoverOpacity = if (takeoverOpacity < level) min(level, takeoverOpacity + dt / rise)
                           else max(level, takeoverOpacity - dt / 0.4f)
         if (takeoverOpacity > 0) {
-            styleTime += dt * speed
+            // Zero Day runs its glitches at its own speed; the idle crawl at
+            // `glitchSpeed`.
+            styleTime += dt * (if (catless) speed else scene.config.glitchSpeed)
             if (styleTime >= scene.config.glitchStyleSeconds) nextStyle()
         }
         val cat = scene.cat
@@ -209,7 +213,7 @@ class IdleCrawlBehavior(
                     if (catless) {
                         takeoverOn = true
                         nextStyle()
-                        timer = rnd(4f, 7f)
+                        timer = rnd(1.5f, 3f)
                         stage = Stage.HACKING
                     } else {
                         cat.visible = true
@@ -225,7 +229,7 @@ class IdleCrawlBehavior(
                     burstTimer = rnd(0.5f, 1.5f)
                 }
                 if (timer <= 0) {
-                    timer = 1.3f
+                    timer = 0.8f
                     stage = Stage.HOPPING
                 }
             }
@@ -233,12 +237,12 @@ class IdleCrawlBehavior(
                 timer -= dt
                 if (timer <= 0) {
                     nextStyle()
-                    timer = rnd(4f, 7f)
+                    timer = rnd(1.5f, 3f)
                     stage = Stage.HACKING
                 }
             }
             Stage.EXITING -> {
-                // No cat to shrink in Mr. Robot: it is over at once.
+                // No cat to shrink in Zero Day: it is over at once.
                 if (!cat.visible || catless) return true
                 exitTime += dt
                 val t = min(1f, exitTime / 0.8f)

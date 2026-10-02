@@ -500,8 +500,8 @@ enum class Routine(val key: String) {
     STROLL("stroll"), NAP("nap"), BALL("ball"), HUNGRY("hungry"), CRAWL("crawl"),
     // The nonstop crawl that runs while you are away from the phone.
     IDLE_CRAWL("idlecrawl"),
-    // Three minutes of the idle crawl at four times the pace.
-    MR_ROBOT("mrrobot");
+    // Zero Day: three minutes of catless glitching at high speed.
+    ZERO_DAY("zeroday");
 
     companion object {
         fun from(key: String?) = entries.firstOrNull { it.key == key }
@@ -518,7 +518,7 @@ fun makeBehavior(routine: Routine, scene: Scene): Behavior {
         Routine.HUNGRY -> HungryBehavior(scene)
         Routine.CRAWL -> CrawlBehavior(scene, scene.crawlTargets)
         Routine.IDLE_CRAWL -> IdleCrawlBehavior(scene)
-        Routine.MR_ROBOT -> IdleCrawlBehavior(scene, speed = 4f, maxDuration = 180f, countdown = 3f, catless = true)
+        Routine.ZERO_DAY -> IdleCrawlBehavior(scene, speed = scene.config.zeroDaySpeed, maxDuration = 180f, countdown = 3f, catless = true)
         Routine.STROLL -> {
             val start = entryPoint(scene, size)
             cat.pos = start.copy()

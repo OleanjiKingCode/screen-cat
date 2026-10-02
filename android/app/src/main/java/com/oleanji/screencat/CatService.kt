@@ -160,9 +160,9 @@ class CatService : Service() {
         if (!Settings.canDrawOverlays(this)) return START_NOT_STICKY
         when (intent?.action) {
             ACTION_RUN -> when (val routine = Routine.from(intent.getStringExtra(EXTRA_ROUTINE))) {
-                // Mr. Robot gets a 3.2 s grace over its 3 s countdown, the
+                // Zero Day gets a 3.2 s grace over its 3 s countdown, the
                 // crawl a second, so the tap that started it does not stop it.
-                Routine.MR_ROBOT -> beginIdleCrawl(3200, Routine.MR_ROBOT)
+                Routine.ZERO_DAY -> beginIdleCrawl(3200, Routine.ZERO_DAY)
                 Routine.IDLE_CRAWL -> beginIdleCrawl(1000, Routine.IDLE_CRAWL)
                 null -> {}
                 else -> start(routine, force = true)
@@ -223,10 +223,10 @@ class CatService : Service() {
     private fun buildNotification(): Notification {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), flags)
-        // Mr. Robot goes through a see-through activity: starting an activity
+        // Zero Day goes through a see-through activity: starting an activity
         // closes the notification shade, so you do not have to swipe it shut
         // (a touch that would end the show).
-        val robot = PendingIntent.getActivity(this, 1, ActionActivity.intent(this, Routine.MR_ROBOT), flags)
+        val zeroDay = PendingIntent.getActivity(this, 1, ActionActivity.intent(this, Routine.ZERO_DAY), flags)
         val pause = PendingIntent.getService(this, 2, intent(this, ACTION_PAUSE), flags)
         val stop = PendingIntent.getService(this, 3, intent(this, ACTION_STOP), flags)
         return Notification.Builder(this, CHANNEL)
@@ -236,7 +236,7 @@ class CatService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .setShowWhen(false)
-            .addAction(Notification.Action.Builder(null, "Mr. Robot", robot).build())
+            .addAction(Notification.Action.Builder(null, "Zero Day", zeroDay).build())
             .addAction(Notification.Action.Builder(null, if (paused) "Resume" else "Pause", pause).build())
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())
             .build()
@@ -490,7 +490,7 @@ class CatService : Service() {
         scene.cat.size = max(24f, frame.height / scene.config.sizeDivisor)
         // Android keeps to the bottom edge, so there is one surface.
         scene.setStage(frame, scene.cat.size)
-        scene.crawlTargets = if (routine == Routine.CRAWL || routine == Routine.IDLE_CRAWL || routine == Routine.MR_ROBOT) {
+        scene.crawlTargets = if (routine == Routine.CRAWL || routine == Routine.IDLE_CRAWL || routine == Routine.ZERO_DAY) {
             pretendWindows(scene)
         } else {
             emptyList()
@@ -505,7 +505,7 @@ class CatService : Service() {
         behavior = b
         scene.cat.wearing = pickOutfit(scene.config)
         // A hacker wears shades.
-        if (routine == Routine.CRAWL || routine == Routine.IDLE_CRAWL || routine == Routine.MR_ROBOT) {
+        if (routine == Routine.CRAWL || routine == Routine.IDLE_CRAWL || routine == Routine.ZERO_DAY) {
             scene.cat.wearing.add(Accessory.GLASSES)
         }
         if (b is IdleCrawlBehavior) b.requestTargets = { pretendWindows(scene) }
@@ -554,8 +554,8 @@ class CatService : Service() {
         val dt = if (lastFrameNanos == 0L) 1f / 60f else ((now - lastFrameNanos) / 1e9f).coerceIn(0.001f, 0.05f)
         lastFrameNanos = now
 
-        // A touch: the glitch goes at once and the cat shrinks away. Mr.
-        // Robot ending on time takes the same exit.
+        // A touch: the glitch goes at once and the cat shrinks away. Zero
+        // Day ending on time takes the same exit.
         if (b is IdleCrawlBehavior) {
             if (!b.isExiting && touchedSinceIdleCrawl()) b.beginExit()
             if (b.isExiting && !exitHandled) {
@@ -584,7 +584,10 @@ class CatService : Service() {
         scheduleFrame()
     }
 
-    /** Puts the glitch over the whole screen and renders it about 20 times a second. */
+    /**
+     * Puts the glitch over the whole screen and renders it about 20 times a
+     * second, 30 for Zero Day, which moves fast.
+     */
     private fun showTakeover(idle: IdleCrawlBehavior) {
         val s = screen ?: return
         val countdown = idle.countdownLeft > 0
@@ -598,7 +601,7 @@ class CatService : Service() {
         view.takeover = renderer.front
         view.takeoverOpacity = opacity
         val nowMs = SystemClock.uptimeMillis()
-        if (nowMs - lastTakeoverRequest < 50) return
+        if (nowMs - lastTakeoverRequest < (if (idle.catless) 33 else 50)) return
         lastTakeoverRequest = nowMs
         if (countdown) {
             renderer.request(countdownRecipe(ceil(idle.countdownLeft).toInt()), idle.countdownLeft, 7, 0f, s.widthDp, s.heightDp)

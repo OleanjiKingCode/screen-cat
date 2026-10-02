@@ -26,7 +26,7 @@ import android.widget.Toast
 import org.json.JSONObject
 
 /**
- * The settings screen: start and stop, run a routine now, Mr. Robot, the mode,
+ * The settings screen: start and stop, run a routine now, Zero Day, the mode,
  * and the settings that matter most. Everything is saved to screencat.json
  * with the same keys as the Mac's ~/.screencat.json; the raw file is editable
  * at the bottom for the rest.
@@ -106,7 +106,7 @@ class MainActivity : Activity() {
             button("Break stuff") { startCat(Routine.CRAWL) },
         ))
         root.addView(button("Crawl until I touch something") { startCat(Routine.IDLE_CRAWL) })
-        root.addView(button("Mr. Robot (3 min hack, starts now)") { startCat(Routine.MR_ROBOT) }.apply {
+        root.addView(button("Zero Day (3 min hack, starts now)") { startCat(Routine.ZERO_DAY) }.apply {
             setTextColor(rgb(0x39FF7A))
         })
 
@@ -127,6 +127,8 @@ class MainActivity : Activity() {
         numberFields["idleCrawlSeconds"] = numberField(root, "idleCrawlSeconds (no touch for this long, at least 15)", c.idleCrawlSeconds.toDouble())
         numberFields["glitchStyleSeconds"] = numberField(root, "glitchStyleSeconds (each style plays this long)", c.glitchStyleSeconds.toDouble())
         numberFields["growScale"] = numberField(root, "growScale (1 to 4)", c.growScale.toDouble())
+        numberFields["glitchSpeed"] = numberField(root, "glitchSpeed (how fast the idle glitch runs, 0.25 to 16)", c.glitchSpeed.toDouble())
+        numberFields["zeroDaySpeed"] = numberField(root, "zeroDaySpeed (how fast Zero Day runs, 1 to 16)", c.zeroDaySpeed.toDouble())
 
         root.addView(section("Outfit"))
         numberFields["chainChance"] = numberField(root, "chainChance (0 to 1)", c.chainChance)
@@ -169,7 +171,7 @@ class MainActivity : Activity() {
         permissionButton.visibility = if (allowed) View.GONE else View.VISIBLE
         status.text = when {
             !allowed -> "Needs \"Display over other apps\" before the cat can come out."
-            CatService.running -> "Running. Pause, stop and Mr. Robot are also on the notification."
+            CatService.running -> "Running. Pause, stop and Zero Day are also on the notification."
             else -> "Stopped."
         }
         rawJson.setText(Config.readRaw(this)?.toString(2) ?: Config().toJson().toString(2))

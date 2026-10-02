@@ -81,6 +81,10 @@ data class Config(
     var idleCrawlSeconds: Float = 120f,
     var growScale: Float = 2f,
     var glitchStyleSeconds: Float = 60f,
+    // How fast the idle crawl's glitches animate and change. Zero Day runs
+    // at `zeroDaySpeed`.
+    var glitchSpeed: Float = 2f,
+    var zeroDaySpeed: Float = 8f,
 
     // Activity log: Mac only.
     var activityLog: Boolean = true,
@@ -153,6 +157,8 @@ data class Config(
         put("idleCrawlSeconds", idleCrawlSeconds.toDouble())
         put("glitchStyleSeconds", glitchStyleSeconds.toDouble())
         put("growScale", growScale.toDouble())
+        put("glitchSpeed", glitchSpeed.toDouble())
+        put("zeroDaySpeed", zeroDaySpeed.toDouble())
         put("activityLog", activityLog)
         put("activityLogDays", activityLogDays.toDouble())
         put("opacity", opacity.toDouble())
@@ -230,6 +236,8 @@ data class Config(
             c.idleCrawlSeconds = num("idleCrawlSeconds", c.idleCrawlSeconds)
             c.glitchStyleSeconds = num("glitchStyleSeconds", c.glitchStyleSeconds)
             c.growScale = num("growScale", c.growScale)
+            c.glitchSpeed = num("glitchSpeed", c.glitchSpeed)
+            c.zeroDaySpeed = num("zeroDaySpeed", c.zeroDaySpeed)
             c.activityLog = bool("activityLog", c.activityLog)
             c.activityLogDays = num("activityLogDays", c.activityLogDays)
             c.opacity = num("opacity", c.opacity)
@@ -254,6 +262,8 @@ data class Config(
             c.idleCrawlSeconds = maxOf(15f, c.idleCrawlSeconds)
             c.glitchStyleSeconds = maxOf(5f, c.glitchStyleSeconds)
             c.growScale = clamp(c.growScale, 1f, 4f)
+            c.glitchSpeed = clamp(c.glitchSpeed, 0.25f, 16f)
+            c.zeroDaySpeed = clamp(c.zeroDaySpeed, 1f, 16f)
             c.chainChance = c.chainChance.coerceIn(0.0, 1.0)
             c.glassesChance = c.glassesChance.coerceIn(0.0, 1.0)
             return c
