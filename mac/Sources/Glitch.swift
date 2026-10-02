@@ -21,12 +21,12 @@ enum GlitchStyle: CaseIterable {
 
 /// The colours a breach can come in.
 let glitchAccents: [NSColor] = [
-    NSColor(srgbRed: 0.22, green: 1.0, blue: 0.48, alpha: 1),   // green
-    NSColor(srgbRed: 0.2, green: 0.9, blue: 1.0, alpha: 1),     // cyan
-    NSColor(srgbRed: 1.0, green: 0.3, blue: 0.85, alpha: 1),    // magenta
-    NSColor(srgbRed: 1.0, green: 0.75, blue: 0.2, alpha: 1),    // amber
-    NSColor(srgbRed: 1.0, green: 0.27, blue: 0.3, alpha: 1),    // red
-    NSColor(srgbRed: 0.7, green: 0.5, blue: 1.0, alpha: 1),     // purple
+    NSColor(srgbRed: 0.0, green: 1.0, blue: 0.25, alpha: 1),    // terminal green
+    NSColor(srgbRed: 1.0, green: 0.0, blue: 0.2, alpha: 1),     // blood red
+    NSColor(srgbRed: 1.0, green: 0.69, blue: 0.0, alpha: 1),    // warning amber
+    NSColor(srgbRed: 1.0, green: 0.23, blue: 0.0, alpha: 1),    // fire orange
+    NSColor(white: 1, alpha: 1),                                // white
+    NSColor(srgbRed: 0.71, green: 1.0, blue: 0.23, alpha: 1),   // acid green
 ]
 
 private let alarmRed = NSColor(srgbRed: 1.0, green: 0.23, blue: 0.36, alpha: 1)
@@ -236,8 +236,8 @@ private func drawScanlines(_ r: CGRect) {
 
 /// Sliced, shifted bars in the two halves of an RGB split.
 private func drawSlices(_ r: CGRect, flicker: inout GlitchRandom) {
-    let tints = [NSColor(srgbRed: 1, green: 0, blue: 0.6, alpha: 0.28),
-                 NSColor(srgbRed: 0, green: 0.9, blue: 1, alpha: 0.28),
+    let tints = [NSColor(srgbRed: 1, green: 0, blue: 0.2, alpha: 0.3),
+                 NSColor(srgbRed: 0, green: 1, blue: 0.25, alpha: 0.28),
                  NSColor(white: 1, alpha: 0.12)]
     for i in 0..<10 {
         tints[i % tints.count].setFill()
@@ -395,8 +395,8 @@ private func drawNoSignal(_ b: Breach, in r: CGRect, flicker: inout GlitchRandom
         }
         y += block
     }
-    let bars: [NSColor] = [NSColor(white: 0.8, alpha: 1), .systemYellow, .systemTeal, .systemGreen,
-                           .systemPink, .systemRed, .systemBlue]
+    let bars: [NSColor] = [NSColor(white: 0.85, alpha: 1), glitchAccents[1], .black, glitchAccents[0],
+                           glitchAccents[2], NSColor(srgbRed: 0.55, green: 0, blue: 0, alpha: 1), .black]
     let band = CGRect(x: r.minX, y: r.midY - r.height * 0.15, width: r.width, height: r.height * 0.3)
     let barW = band.width / CGFloat(bars.count)
     let shift = flicker.range(-12, 12)

@@ -105,9 +105,10 @@ mode drives both, and it is saved as `mode` in the settings.
 keyboard input, in **any** mode (normal included), the cat walks onto the
 screen, stops, and grows to `growScale` (2x) in pulses inside a ring of light.
 Then the **whole screen** (menu bar and Dock too) turns into a glitch, and
-stays that way. There are 50 full-screen styles (Digital Rain, Blue Screen of
-Meow, No Signal, Meltdown, Outrun, Radar Lock, Error Storm, Cat Virus, Hex
-Dump, Warp Speed and more), each in its own colours. One plays for
+stays that way. There are 50 full-screen styles (Digital Rain, Kernel Panic, No
+Signal, Meltdown, Grid Runner, Radar Lock, Error Storm, Worm Outbreak, Hex
+Dump, Ransomware and more), all in danger colours: blood red, terminal green,
+warning amber and white on black. One plays for
 `glitchStyleSeconds` (60), then the next takes over. The cat roams the screen
 on top, up, down and sideways (shrinking as it goes up, zig-zagging up steep
 climbs), stops at windows and zaps them, which flashes the screen. At the edge
@@ -120,16 +121,16 @@ while a blocked app (video) is in front or fullscreen, and stops when the
 display sleeps. Only real hardware input counts. **Crawl until I touch
 something** starts one now. `idleCrawl: false` turns it off.
 
-**Mr. Robot.** **Mode > Mr. Robot (3 min hack, starts now)** is a three-minute
-hacked-computer show with no cat at all. After a three-second "MR. ROBOT IN 3"
+**Zero Day.** **Mode > Zero Day (3 min hack, starts now)** is a three-minute
+hacked-computer show with no cat at all. After a three-second "ZERO DAY IN 3"
 countdown (so the click that started it does not stop it), the whole screen
-glitches at four times the speed, with bursts of flashes. Every 4 to 7 seconds
-it jumps to a random app one to three places left or right (the third app to
-the left, then the second to the right, and so on); macOS slides to it, the
-glitch dims for a moment so you glimpse the app, then a new style takes over.
-It ends after three minutes or at the first touch, with the glitch gone at once
-and you back in the app you started in. It does not change the saved mode.
-`--idle-selftest mrrobot` runs it invisibly.
+glitches at `zeroDaySpeed` (8x) with bursts of red flashes, rendering at 30 fps.
+Every 1.5 to 3 seconds it jumps to a random app one to three places left or
+right (the third app to the left, then the second to the right, and so on);
+macOS slides to it, the glitch dims for 0.8 s so you glimpse the app, then a
+new style takes over. It ends after three minutes or at the first touch, with
+the glitch gone at once and you back in the app you started in. It does not
+change the saved mode. `--idle-selftest zeroday` runs it invisibly.
 
 The glitch renders at half resolution, 20 frames a second, on its own layer
 under the cat; the slowest style takes about 12 ms a frame. See every style:
@@ -311,7 +312,9 @@ it, and those are never requested.
 | `idleCrawl` | `true` | Start the nonstop crawl when you leave the Mac alone. |
 | `idleCrawlSeconds` | `120` | How long with no input before it starts. At least `15`. |
 | `growScale` | `2` | How big the cat grows when the idle crawl starts, `1` to `4`. |
-| `glitchStyleSeconds` | `60` | How long each full-screen glitch style plays. At least `5`. |
+| `glitchStyleSeconds` | `60` | How long each full-screen glitch style plays at speed 1. At least `5`. |
+| `glitchSpeed` | `2` | How fast the idle crawl's glitches animate and change. |
+| `zeroDaySpeed` | `8` | The same for Zero Day. |
 | `activityLog` | `true` | Keep the daily activity log in `~/Library/Logs/ScreenCat`. |
 | `activityLogDays` | `30` | Delete day files older than this. `0` keeps them forever. |
 | `opacity` | `1.0` | Overall transparency, `0.1` to `1.0`. |

@@ -107,6 +107,10 @@ struct Config {
     var growScale: CGFloat = 2
     /// How long each full-screen glitch style plays before the next one.
     var glitchStyleSeconds: CGFloat = 60
+    /// How fast the idle crawl's glitches animate and change. Zero Day runs
+    /// at `zeroDaySpeed`.
+    var glitchSpeed: CGFloat = 2
+    var zeroDaySpeed: CGFloat = 8
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary of apps, sleep, Bluetooth and what is running,
@@ -194,6 +198,8 @@ struct Config {
         c.idleCrawl             = bool("idleCrawl")            ?? c.idleCrawl
         c.idleCrawlSeconds      = num("idleCrawlSeconds")      ?? c.idleCrawlSeconds
         c.glitchStyleSeconds    = num("glitchStyleSeconds")    ?? c.glitchStyleSeconds
+        c.glitchSpeed           = num("glitchSpeed")           ?? c.glitchSpeed
+        c.zeroDaySpeed          = num("zeroDaySpeed")          ?? c.zeroDaySpeed
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
         c.activityLogDays       = num("activityLogDays")       ?? c.activityLogDays
@@ -219,6 +225,8 @@ struct Config {
         c.crawlChance = max(0, min(1, c.crawlChance))
         c.idleCrawlSeconds = max(15, c.idleCrawlSeconds)
         c.glitchStyleSeconds = max(5, c.glitchStyleSeconds)
+        c.glitchSpeed = max(0.25, min(16, c.glitchSpeed))
+        c.zeroDaySpeed = max(1, min(16, c.zeroDaySpeed))
         c.growScale = max(1, min(4, c.growScale))
         c.chainChance = max(0, min(1, c.chainChance))
         c.glassesChance = max(0, min(1, c.glassesChance))
@@ -289,6 +297,8 @@ struct Config {
             "idleCrawl": d.idleCrawl,
             "idleCrawlSeconds": d.idleCrawlSeconds,
             "glitchStyleSeconds": d.glitchStyleSeconds,
+            "glitchSpeed": d.glitchSpeed,
+            "zeroDaySpeed": d.zeroDaySpeed,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,
