@@ -545,21 +545,27 @@ public sealed class App : IDisposable
         input.LastInjected = Environment.TickCount64;
     }
 
-    /// The edge of the screen: brings the next app forward, in name order in
-    /// the cat's direction. Skips blocked apps and tiny windows. Windows on the
-    /// cat's own screen come first.
-    private bool SwitchToNextApp(double direction)
+    /// Apps the crawl may bring forward: each app's front window, visible,
+    /// not minimised, not a tool window, not cloaked, not blocked, not tiny,
+    /// in name order. Windows on the cat's own screen come first.
+    private List<WindowInfo> SwitchableApps()
     {
-        var screen = currentScreen ?? TargetScreen();
-        var area = ScreenRect(screen);
+        var area = ScreenRect(currentScreen ?? TargetScreen());
         var windows = Watching.AppWindows()
             .Where(w => w.Rect.Width >= 300 && w.Rect.Height >= 200 && !Watching.IsBlocked(w.Pid, scene.Config.BlockedApps))
             .ToList();
         var here = windows.Where(w => w.Rect.Intersects(area)).ToList();
         if (here.Count > 0) windows = here;
         // The front-most window of each app stands for the app.
-        var apps = windows.GroupBy(w => w.Pid).Select(g => g.First())
+        return windows.GroupBy(w => w.Pid).Select(g => g.First())
             .OrderBy(w => Watching.DisplayName(w.Pid), StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// The edge of the screen: brings the next app forward, in name order in
+    /// the cat's direction.
+    private bool SwitchToNextApp(double direction)
+    {
+        var apps = SwitchableApps();
         uint front = Watching.ForegroundPid();
         if (!apps.Any(a => a.Pid != front)) return false;
         WindowInfo? next;
@@ -578,6 +584,24 @@ public sealed class App : IDisposable
         BringForward(target.Handle);
         switchedApps = true;
         ActivityLog.Shared.Cat($"crawled over to {Watching.DisplayName(target.Pid)}");
+        return true;
+    }
+
+    /// Mr. Robot's hop: a random app one to three places left or right of the
+    /// one in front, so it jumps around rather than stepping through in order.
+    private bool SwitchToRandomApp()
+    {
+        var apps = SwitchableApps();
+        if (apps.Count < 2) return false;
+        uint front = Watching.ForegroundPid();
+        int i = Math.Max(0, apps.FindIndex(a => a.Pid == front));
+        int side = Rng.Bool() ? 1 : -1;
+        int places = Rng.IntIn(1, Math.Min(3, apps.Count - 1));
+        var next = apps[((i + side * places) % apps.Count + apps.Count) % apps.Count];
+        if (next.Pid == front) return false;
+        BringForward(next.Handle);
+        switchedApps = true;
+        ActivityLog.Shared.Cat($"hopped to {Watching.DisplayName(next.Pid)} ({places} to the {(side > 0 ? "right" : "left")})");
         return true;
     }
 
@@ -783,6 +807,7 @@ public sealed class App : IDisposable
         {
             idle.RequestTargets = () => CrawlTargets(currentScreen ?? TargetScreen());
             idle.RequestNextApp = SwitchToNextApp;
+            idle.RequestRandomApp = SwitchToRandomApp;
             input.Start();
         }
         scene.Cat.Visible = true;

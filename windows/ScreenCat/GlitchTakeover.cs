@@ -78,6 +78,7 @@ public static class Takeover
     private static readonly Rgba[] Blood = { H(0xFF3B4A), H(0xFF8A80), H(0x8A0016) };
     private static readonly Rgba[] Synth = { H(0xFF2E97), H(0x00E5FF), H(0xFFD319) };
     private static readonly Rgba[] Ghost = { H(0xFFFFFF), H(0xB0B0B0), H(0x5A5A5A) };
+    // Purple and gold.
     private static readonly Rgba[] Royal = { H(0xA87BE0), H(0xFFC94A), H(0x5B2D91) };
     private static readonly Rgba[] Sunset = { H(0xFF6B35), H(0xF7C59F), H(0x2EC4B6) };
     private static readonly Rgba[] Void = { H(0xE0AAFF), H(0x9D4EDD), H(0x3C096C) };
@@ -101,7 +102,7 @@ public static class Takeover
         R("Digital Rain", 0.92, Toxic, TakeoverLayer.Matrix(Kana), RollingBar),
         R("Ice Rain", 0.92, Ice, TakeoverLayer.Matrix("01"), Scanlines),
         R("Pink Rain", 0.92, HotPink, TakeoverLayer.Matrix(Kana), Tint),
-        R("Blue Screen of Meow", 1, Ice, TakeoverLayer.BlueScreen),
+        R("Kernel Panic", 1, Ice, TakeoverLayer.BlueScreen),
         R("No Signal", 0.7, Ghost, StaticNoise, ColorBars, RollingBar, TakeoverLayer.BigText("NO SIGNAL")),
         R("Amber Static", 0.75, Amber, StaticNoise, Scanlines, Tint),
         R("Meltdown", 0.7, Blood, TakeoverLayer.Melt, Scanlines, TakeoverLayer.BigText("MELTDOWN")),
@@ -118,15 +119,15 @@ public static class Takeover
         R("Outrun", 0.96, Synth, TakeoverLayer.GridFloor, Scanlines),
         R("RGB Waves", 0.78, Synth, TakeoverLayer.Waves, Slices),
         R("Checker Panic", 0.72, Blood, TakeoverLayer.Checker, TakeoverLayer.BigText("ALERT")),
-        R("Meow Wall", 0.88, Royal, TakeoverLayer.Tiled("MEOW"), Scanlines),
+        R("Root Wall", 0.88, Royal, TakeoverLayer.Tiled("ROOT ACCESS"), Scanlines),
         R("Hacked Wall", 0.88, Toxic, TakeoverLayer.Tiled("HACKED"), Slices),
         R("Download Everything", 0.92, Amber, TakeoverLayer.HexWall, TakeoverLayer.Loading),
-        R("Cat Virus", 0.85, Toxic, TakeoverLayer.Virus, TakeoverLayer.BigText("CAT VIRUS DETECTED", "CAT VIRUS")),
+        R("Worm Outbreak", 0.85, Toxic, TakeoverLayer.Virus, TakeoverLayer.BigText("WORM SPREADING", "INFECTED")),
         R("Hex Dump", 0.94, Amber, TakeoverLayer.HexWall, RollingBar),
         R("Root Shell", 0.94, Toxic, TakeoverLayer.CodeWall, Scanlines),
         R("Data Stream", 0.92, Ice, TakeoverLayer.DataStream, Scanlines),
         R("Purple Haze", 0.8, Void, TakeoverLayer.Waves, Tint, StaticNoise),
-        R("Ghost Signal", 0.78, Ghost, StaticNoise, Tears, TakeoverLayer.BigText("IS ANYONE THERE?", "HELLO?")),
+        R("Ghost Signal", 0.78, Ghost, StaticNoise, Tears, TakeoverLayer.BigText("WE ARE INSIDE", "INSIDE")),
         R("Red Alert", 0.82, Blood, RollingBar, TakeoverLayer.Checker, TakeoverLayer.BigText("SELF DESTRUCT IN #", "BOOM IN #")),
         R("Sunset Melt", 0.72, Sunset, TakeoverLayer.Melt, TakeoverLayer.Waves),
         R("Neon Tunnel", 0.92, Synth, TakeoverLayer.Tunnel, TakeoverLayer.Warp),
@@ -136,13 +137,13 @@ public static class Takeover
         R("Broken Display", 0.72, Ghost, Tears, ColorBars, Slices, TakeoverLayer.Cracks),
         R("Radar Rain", 0.92, Ice, TakeoverLayer.Radar, TakeoverLayer.Matrix("01")),
         R("Synthwave Scope", 0.96, Synth, TakeoverLayer.GridFloor, TakeoverLayer.Scope),
-        R("Error 404", 0.75, Blood, TakeoverLayer.Tiled("404"), TakeoverLayer.Popups),
+        R("Access Denied", 0.75, Blood, TakeoverLayer.Tiled("ACCESS DENIED"), TakeoverLayer.Popups),
         R("Infection", 0.85, HotPink, TakeoverLayer.Virus, TakeoverLayer.CodeWall),
         R("Deep Sort", 0.75, Void, TakeoverLayer.PixelSort, RollingBar, Scanlines),
-        R("Gold Rush", 0.9, Amber, TakeoverLayer.Tiled("PAY ME"), TakeoverLayer.DataStream),
+        R("Ransomware", 0.9, Amber, TakeoverLayer.Tiled("PAY 5 BTC"), TakeoverLayer.DataStream, TakeoverLayer.BigText("YOUR FILES ARE ENCRYPTED", "ENCRYPTED")),
         R("Heartbeat Grid", 0.94, Toxic, TakeoverLayer.GridFloor, TakeoverLayer.Heartbeat),
         R("Frozen", 0.78, Ice, TakeoverLayer.Checker, Tint, TakeoverLayer.Cracks),
-        R("Cat OS Crash", 1, Royal, TakeoverLayer.BlueScreen, Tears),
+        R("Fatal Exception", 1, Blood, TakeoverLayer.BlueScreen, Tears),
         R("Signal Lost", 0.75, Amber, TakeoverLayer.Vhs, StaticNoise, TakeoverLayer.BigText("SIGNAL LOST", "LOST")),
         R("Laser Grid", 0.94, Blood, TakeoverLayer.GridFloor, TakeoverLayer.Radar),
         R("Hyperdrive", 0.96, Void, TakeoverLayer.Warp, TakeoverLayer.Tunnel),
@@ -331,13 +332,36 @@ public static class Takeover
 
     private static readonly string[] WallCode =
     {
-        "$ sudo purr --force --no-mercy", "inject --payload whiskers.bin", "bypass firewall :: port 443 OPEN",
-        "decrypt(0x3F2A9C) -> ok", "while (true) { claw(memory); }", "rm -rf /system/naps/*",
-        "kernel.panic(\"too many cats\")", "ssh root@mainframe --whiskers", "override AUTH_TOKEN=meow",
-        "patching memory @ 0x0C47", "exfiltrating yarn.db (2.3 MB)", "access level: ROOT",
-        "segfault in app.render()", "chmod 777 /dev/catnip", "ERROR 0xDEAD: app not responding",
-        "uploading hairball.zip", "fork() x 9 lives", "GET /api/v1/treats  200 OK", "deleting monday.exe ...",
-        "for (i = 0; i < 9; i++) lives[i].backup()", "mount /dev/fishtank /mnt/snacks", "compiling mischief.c ... done",
+        "> connecting to 185.220.101.47:22 ...",
+        "$ nmap -sS -p- 10.0.0.0/24 --open",
+        "PORT     STATE SERVICE",
+        "22/tcp   open  ssh",
+        "443/tcp  open  https",
+        "$ ssh -i id_rsa root@10.0.0.14",
+        "Permission denied (publickey).",
+        "$ hydra -l admin -P rockyou.txt ssh://10.0.0.14",
+        "[22][ssh] login: admin  password: ********",
+        "bypassing firewall ... rule 0x1F dropped",
+        "decrypt(0x3F2A9C) -> ok",
+        "dumping /etc/shadow ...",
+        "root:$6$Zx9Q...:19622:0:99999:7:::",
+        "privilege escalation: CVE-20XX-0000 ... ok",
+        "uid=0(root) gid=0(root)",
+        "$ curl -s http://10.0.0.14/admin.php?id=1' OR '1'='1",
+        "injecting payload stage2.bin (48 KB)",
+        "spawning reverse shell -> 185.220.101.47:4444",
+        "keylogger attached to pid 4127",
+        "exfiltrating /Users/*/Documents (2.3 GB)",
+        "wiping logs: /var/log/*.log",
+        "kernel: segfault at 0x00007ffd in libsystem",
+        "ERROR 0xDEAD: process not responding",
+        "rerouting traffic through 7 proxies",
+        "hash cracked: 5f4dcc3b5aa765d61d8327deb882cf99",
+        "AES-256 key found: 9b2e...c41f",
+        "mounting /dev/disk2s1 /mnt/target",
+        "GET /api/v1/users  200 OK",
+        "0101 1100 0011 1010 1110",
+        "establishing persistence: launchd.plist",
     };
 
     private static void DrawCodeWall(RectD r, double t, Rgba[] pal, uint seed, Canvas ctx)
@@ -388,7 +412,7 @@ public static class Takeover
     {
         ctx.FillRect(r, pal[2].Blend(0.15, Rgba.Black));
         int percent = Math.Min(100, (int)(t * 1.7));
-        string[] lines = { "YOUR CAT RAN INTO A PROBLEM", "CAT.EXE HAS STOPPED", "STOP CODE: HAIRBALL", $"COLLECTING CATNIP {percent}%" };
+        string[] lines = { "YOUR SYSTEM HAS BEEN COMPROMISED", "KERNEL PANIC: NOT SYNCING", "STOP CODE: 0XC000021A", $"UPLOADING MEMORY DUMP {percent}%" };
         double widest = lines.Max(l => PixelFont.Width(l));
         double p = Math.Max(2, Math.Min(7, Math.Floor(r.Width * 0.75 / widest)));
         double left = r.MinX + r.Width * 0.1;
@@ -502,7 +526,7 @@ public static class Takeover
         }
     }
 
-    private static readonly string[] PopupMessages = { "CAT.EXE IS NOT RESPONDING", "TOO MANY CATS", "OUT OF TREATS", "PURR OVERFLOW", "LITTER BOX FULL" };
+    private static readonly string[] PopupMessages = { "ACCESS DENIED", "SEGMENTATION FAULT", "FIREWALL DISABLED", "DISK ENCRYPTED", "CONNECTION HIJACKED" };
 
     private static void DrawPopups(RectD r, double t, Rgba[] pal, uint seed, Canvas ctx)
     {
@@ -700,7 +724,7 @@ public static class Takeover
         }
     }
 
-    private static readonly string[] LoadingLabels = { "DELETING PHOTOS", "UPLOADING BRAIN", "ENCRYPTING DISK", "FEEDING CAT", "FORMATTING C:", "MINING CATNIP" };
+    private static readonly string[] LoadingLabels = { "COPYING KEYCHAIN", "UPLOADING FILES", "ENCRYPTING DISK", "CRACKING PASSWORDS", "WIPING BACKUPS", "DISABLING FIREWALL" };
 
     private static void DrawLoading(RectD r, double t, Rgba[] pal, Canvas ctx)
     {

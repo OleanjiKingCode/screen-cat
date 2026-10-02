@@ -798,7 +798,7 @@ public static class Helpers
             case Routine.IdleCrawl:
                 return new IdleCrawlBehavior(scene, scene.CrawlTargets);
             case Routine.MrRobot:
-                return new IdleCrawlBehavior(scene, scene.CrawlTargets, speed: 4, maxDuration: 180, countdown: 3);
+                return new IdleCrawlBehavior(scene, scene.CrawlTargets, speed: 4, maxDuration: 180, countdown: 3, catless: true);
             case Routine.Nap:
             {
                 // Naps happen at the sides, and the walk in and out is level, so the cat

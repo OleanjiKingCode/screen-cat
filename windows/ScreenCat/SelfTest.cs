@@ -186,6 +186,8 @@ public static class SelfTest
             nextRoutine:;
         }
 
+        MrRobotCheck();
+
         // Where a stroll went, drawn as dots on a scaled-down screen.
         using var canvas = new Canvas(960, 520);
         canvas.FillRect(new RectD(0, 0, 960, 520), Rgba.White(0.15));
@@ -193,6 +195,28 @@ public static class SelfTest
         foreach (var p in trail) canvas.FillRect(new RectD(p.X - 3, p.Y - 3, 6, 6), new Rgba(1, 0.8, 0.3));
         Save(canvas, trailPath);
         Line($"wrote {Path.GetFileName(trailPath)}");
+    }
+
+    /// Mr. Robot has no cat: after the countdown the glitch is on, it hops
+    /// apps every 4 to 7 seconds, and the cat never shows.
+    private static void MrRobotCheck()
+    {
+        var scene = new Scene { Config = new Config() };
+        scene.Cat.Size = 43;
+        scene.SetStage(Surface.Bottom, new RectD(0, 0, 1920, 1040), scene.Cat.Size);
+        var robot = (IdleCrawlBehavior)Helpers.MakeBehavior(Routine.MrRobot, scene);
+        int hops = 0;
+        robot.RequestRandomApp = () => { hops++; return true; };
+        bool catSeen = false;
+        double peak = 0;
+        for (double t = 0; t < 30; t += 1.0 / 60)
+        {
+            robot.Update(1.0 / 60, scene);
+            if (scene.Cat.Visible) catSeen = true;
+            peak = Math.Max(peak, robot.TakeoverOpacity);
+        }
+        Check(!catSeen && hops >= 3 && peak >= 0.99,
+            $"mr. robot shows no cat, the glitch reaches full strength and it hopped apps {hops} times in 30 s");
     }
 
     private static (bool finished, double seconds, double climbed, double steepest, double size, string? error) Simulate(
@@ -215,6 +239,7 @@ public static class SelfTest
             idle.RequestTargets = () => new List<RectD>(scene.CrawlTargets);
             int hops = 0;
             idle.RequestNextApp = _ => ++hops % 2 == 1;
+            idle.RequestRandomApp = () => ++hops % 2 == 1;
         }
         scene.Cat.Visible = true;
         const double dt = 1.0 / 60;

@@ -167,9 +167,18 @@ Runs with nobody at the screen and writes to `out`:
 - **The 50 glitch styles**: the same names, layers and palettes, rendered at
   half resolution (in logical pixels) about 20 times a second and scaled up
   nearest-neighbour under the cat.
-- **Mr. Robot**: the 3 second "MR. ROBOT IN 3" countdown, 4x speed, a new style
-  every 15 seconds, a 2x faster cat that hops apps after one window, three
-  minutes or the first touch, the same shrink exit.
+- **Mr. Robot**: no cat at all. A 3 second "MR. ROBOT IN 3" countdown (input
+  ignored, so the click that started it does not stop it), then the whole
+  screen glitches at 4x speed straight away (0.3 s fade in) with random flash
+  bursts. Every 4 to 7 seconds it hops to a random app one to three places left
+  or right of the one in front, in the name-sorted list of switchable windows;
+  during the 1.3 s hop the glitch dims to 25% so you glimpse the app, then a new
+  style starts. It ends after three minutes or at the first input: the glitch
+  clears at once and the window you started in comes back. It does not change
+  the saved mode.
+- **Hacker text, no cat theme in the glitches**: the same renamed styles
+  (Kernel Panic, Root Wall, Worm Outbreak, Access Denied, Ransomware, Fatal
+  Exception) and the same code, crash screen, popup and loading text as the Mac.
 
 ## What differs, and why
 

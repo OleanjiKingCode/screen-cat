@@ -22,7 +22,12 @@ namespace ScreenCat;
 /// `maxSlope`, zig-zagging up anything steeper instead of rising straight.
 public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
 {
-    private enum Stage { Countdown, Entering, Growing, Moving, Zapping, Resting, Switching, Arriving, Exiting }
+    private enum Stage
+    {
+        Countdown, Entering, Growing, Moving, Zapping, Resting, Switching, Arriving, Exiting,
+        // Mr. Robot only: glitch on, then hop to a random app.
+        Hacking, Hopping,
+    }
     private Stage stage = Stage.Entering;
     /// For the self-test and the log.
     public string StageName => stage.ToString().ToLowerInvariant();
@@ -53,6 +58,12 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     public readonly double Speed;
     /// Ends by itself after this many seconds (Mr. Robot's three minutes).
     public readonly double? MaxDuration;
+    /// Mr. Robot: no cat at all. The screen glitches and jumps between apps
+    /// in random order, with bursts of flashes and a new style on every hop.
+    public readonly bool Catless;
+    private double burstTimer;
+    /// Jump to a random app, a few places left or right. True if it did.
+    public Func<bool>? RequestRandomApp;
     private double elapsed;
     /// Seconds left on the "starting in" countdown, so the click that started
     /// it is over before any touch can end it.
@@ -81,10 +92,12 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     /// Kept so `BeginExit` can be called from outside an update.
     private double sceneCatSize;
 
-    public IdleCrawlBehavior(Scene scene, List<RectD> targets, double speed = 1, double? maxDuration = null, double countdown = 0)
+    public IdleCrawlBehavior(Scene scene, List<RectD> targets, double speed = 1, double? maxDuration = null, double countdown = 0,
+        bool catless = false)
     {
         Speed = speed;
         MaxDuration = maxDuration;
+        Catless = catless;
         var cat = scene.Cat;
         baseSize = cat.Size;
         sceneCatSize = cat.Size;
@@ -182,8 +195,14 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     {
         if (Zap is Zap z) Zap = z with { Age = z.Age + dt };
         Pulse = Math.Max(0, Pulse - dt * 1.5);
-        // Fades in over 1.2s, out over 0.4s so the next app shows promptly.
-        TakeoverOpacity = takeoverOn ? Math.Min(1, TakeoverOpacity + dt / 1.2) : Math.Max(0, TakeoverOpacity - dt / 0.4);
+        // Fades in over 1.2s (0.3s for Mr. Robot), out over 0.4s so the next
+        // app shows promptly. While Mr. Robot hops it only dims, so the new
+        // app is glimpsed through the glitch.
+        double level = takeoverOn ? (stage == Stage.Hopping ? 0.25 : 1) : 0;
+        double rise = Catless ? 0.3 : 1.2;
+        TakeoverOpacity = TakeoverOpacity < level
+            ? Math.Min(level, TakeoverOpacity + dt / rise)
+            : Math.Max(level, TakeoverOpacity - dt / 0.4);
         if (TakeoverOpacity > 0)
         {
             StyleTime += dt * Speed;
@@ -194,6 +213,8 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
         elapsed += dt;
         if (MaxDuration is double max && elapsed >= max && stage != Stage.Exiting) BeginExit();
 
+        if (Catless) cat.Visible = false;
+
         switch (stage)
         {
             case Stage.Countdown:
@@ -201,14 +222,57 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
                 if (CountdownLeft <= 0)
                 {
                     CountdownLeft = 0;
-                    cat.Visible = true;
-                    stage = Stage.Entering;
+                    if (Catless)
+                    {
+                        takeoverOn = true;
+                        NextStyle();
+                        timer = Rng.Range(4, 7);
+                        stage = Stage.Hacking;
+                    }
+                    else
+                    {
+                        cat.Visible = true;
+                        stage = Stage.Entering;
+                    }
+                }
+                break;
+
+            case Stage.Hacking:
+                timer -= dt;
+                burstTimer -= dt;
+                if (burstTimer <= 0)
+                {
+                    Pulse = Rng.Range(0.5, 1);
+                    burstTimer = Rng.Range(0.5, 1.5);
+                }
+                if (timer <= 0)
+                {
+                    if (RequestRandomApp?.Invoke() == true)
+                    {
+                        timer = 1.3;
+                        stage = Stage.Hopping;
+                    }
+                    else
+                    {
+                        NextStyle();
+                        timer = Rng.Range(4, 7);
+                    }
+                }
+                break;
+
+            case Stage.Hopping:
+                timer -= dt;
+                if (timer <= 0)
+                {
+                    NextStyle();
+                    timer = Rng.Range(4, 7);
+                    stage = Stage.Hacking;
                 }
                 break;
 
             case Stage.Exiting:
             {
-                if (!cat.Visible) return true;
+                if (!cat.Visible || Catless) return true;
                 exitTime += dt;
                 double t = Math.Min(1, exitTime / 0.8);
                 // Shrinks slowly, then fast, and is gone.
