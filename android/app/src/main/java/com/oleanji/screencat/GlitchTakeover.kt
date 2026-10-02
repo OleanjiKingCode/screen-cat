@@ -64,17 +64,18 @@ class GlitchRecipe(
     val palette: List<Int>,
 )
 
-private val TOXIC = listOf(rgb(0x39FF7A), rgb(0xB6FF3B), rgb(0x0B6E34))
-private val ICE = listOf(rgb(0x33E6FF), rgb(0xBDF4FF), rgb(0x1E6BFF))
-private val HOT_PINK = listOf(rgb(0xFF4DD8), rgb(0xFF8FD1), rgb(0x8A2BE2))
-private val AMBER = listOf(rgb(0xFFBF33), rgb(0xFF7A1A), rgb(0xFFE08A))
-private val BLOOD = listOf(rgb(0xFF3B4A), rgb(0xFF8A80), rgb(0x8A0016))
-private val SYNTH = listOf(rgb(0xFF2E97), rgb(0x00E5FF), rgb(0xFFD319))
-private val GHOST = listOf(rgb(0xFFFFFF), rgb(0xB0B0B0), rgb(0x5A5A5A))
-// Purple and gold.
-private val ROYAL = listOf(rgb(0xA87BE0), rgb(0xFFC94A), rgb(0x5B2D91))
-private val SUNSET = listOf(rgb(0xFF6B35), rgb(0xF7C59F), rgb(0x2EC4B6))
-private val VOID = listOf(rgb(0xE0AAFF), rgb(0x9D4EDD), rgb(0x3C096C))
+// Danger colours only: blood red, terminal green, warning amber, white on
+// black. Each palette is [main, highlight, deep].
+private val TOXIC = listOf(rgb(0x00FF41), rgb(0xB6FF3B), rgb(0x003B10))
+private val ICE = listOf(rgb(0x00FF41), rgb(0xFFFFFF), rgb(0x0A2A0A))
+private val HOT_PINK = listOf(rgb(0xFF0033), rgb(0x00FF41), rgb(0x2A0008))
+private val AMBER = listOf(rgb(0xFFB000), rgb(0xFF3B00), rgb(0x2B1600))
+private val BLOOD = listOf(rgb(0xFF0033), rgb(0xFF5C5C), rgb(0x4D0000))
+private val SYNTH = listOf(rgb(0xFF0033), rgb(0xFFFFFF), rgb(0x00FF41))
+private val GHOST = listOf(rgb(0xFFFFFF), rgb(0xFF0033), rgb(0x333333))
+private val ROYAL = listOf(rgb(0xFF0033), rgb(0xFFB000), rgb(0x1A0000))
+private val SUNSET = listOf(rgb(0xFF3B00), rgb(0xFFB000), rgb(0x2B0A00))
+private val VOID = listOf(rgb(0xFF0033), rgb(0x8B0000), rgb(0x0D0000))
 
 private const val KANA = "アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789"
 
@@ -83,8 +84,8 @@ private const val KANA = "アイウエオカキクケコサシスセソタチツ
 val GLITCH_RECIPES: List<GlitchRecipe> = listOf(
     GlitchRecipe("Green Breach", 0.7f, listOf(Scanlines, Slices, CodeWall, Cracks, BigText(listOf("SYSTEM BREACHED", "BREACHED"))), TOXIC),
     GlitchRecipe("Digital Rain", 0.92f, listOf(Matrix(KANA), RollingBar), TOXIC),
-    GlitchRecipe("Ice Rain", 0.92f, listOf(Matrix("01"), Scanlines), ICE),
-    GlitchRecipe("Pink Rain", 0.92f, listOf(Matrix(KANA), Tint), HOT_PINK),
+    GlitchRecipe("Binary Rain", 0.92f, listOf(Matrix("01"), Scanlines), ICE),
+    GlitchRecipe("Blood Rain", 0.92f, listOf(Matrix(KANA), Tint), HOT_PINK),
     GlitchRecipe("Kernel Panic", 1f, listOf(BlueScreen), ICE),
     GlitchRecipe("No Signal", 0.7f, listOf(StaticNoise, ColorBars, RollingBar, BigText(listOf("NO SIGNAL"))), GHOST),
     GlitchRecipe("Amber Static", 0.75f, listOf(StaticNoise, Scanlines, Tint), AMBER),
@@ -99,7 +100,7 @@ val GLITCH_RECIPES: List<GlitchRecipe> = listOf(
     GlitchRecipe("Warp Speed", 0.96f, listOf(Warp), ICE),
     GlitchRecipe("Oscilloscope", 0.92f, listOf(Scope, Scanlines), TOXIC),
     GlitchRecipe("Flatline", 0.94f, listOf(Heartbeat, Scanlines), BLOOD),
-    GlitchRecipe("Outrun", 0.96f, listOf(GridFloor, Scanlines), SYNTH),
+    GlitchRecipe("Grid Runner", 0.96f, listOf(GridFloor, Scanlines), SYNTH),
     GlitchRecipe("RGB Waves", 0.78f, listOf(Waves, Slices), SYNTH),
     GlitchRecipe("Checker Panic", 0.72f, listOf(Checker, BigText(listOf("ALERT"))), BLOOD),
     GlitchRecipe("Root Wall", 0.88f, listOf(Tiled("ROOT ACCESS"), Scanlines), ROYAL),
@@ -109,23 +110,23 @@ val GLITCH_RECIPES: List<GlitchRecipe> = listOf(
     GlitchRecipe("Hex Dump", 0.94f, listOf(HexWall, RollingBar), AMBER),
     GlitchRecipe("Root Shell", 0.94f, listOf(CodeWall, Scanlines), TOXIC),
     GlitchRecipe("Data Stream", 0.92f, listOf(DataStream, Scanlines), ICE),
-    GlitchRecipe("Purple Haze", 0.8f, listOf(Waves, Tint, StaticNoise), VOID),
+    GlitchRecipe("Red Haze", 0.8f, listOf(Waves, Tint, StaticNoise), VOID),
     GlitchRecipe("Ghost Signal", 0.78f, listOf(StaticNoise, Tears, BigText(listOf("WE ARE INSIDE", "INSIDE"))), GHOST),
     GlitchRecipe("Red Alert", 0.82f, listOf(RollingBar, Checker, BigText(listOf("SELF DESTRUCT IN #", "BOOM IN #"))), BLOOD),
-    GlitchRecipe("Sunset Melt", 0.72f, listOf(Melt, Waves), SUNSET),
-    GlitchRecipe("Neon Tunnel", 0.92f, listOf(Tunnel, Warp), SYNTH),
+    GlitchRecipe("Firewall Melt", 0.72f, listOf(Melt, Waves), SUNSET),
+    GlitchRecipe("Breach Tunnel", 0.92f, listOf(Tunnel, Warp), SYNTH),
     GlitchRecipe("Matrix Breach", 0.88f, listOf(Matrix(KANA), Cracks, BigText(listOf("ACCESS GRANTED", "GRANTED"))), TOXIC),
     GlitchRecipe("Static Rain", 0.85f, listOf(StaticNoise, Matrix("01")), GHOST),
     GlitchRecipe("Glitch Mosaic", 0.72f, listOf(Blocks, Checker), ROYAL),
     GlitchRecipe("Broken Display", 0.72f, listOf(Tears, ColorBars, Slices, Cracks), GHOST),
     GlitchRecipe("Radar Rain", 0.92f, listOf(Radar, Matrix("01")), ICE),
-    GlitchRecipe("Synthwave Scope", 0.96f, listOf(GridFloor, Scope), SYNTH),
+    GlitchRecipe("Signal Intercept", 0.96f, listOf(GridFloor, Scope), SYNTH),
     GlitchRecipe("Access Denied", 0.75f, listOf(Tiled("ACCESS DENIED"), Popups), BLOOD),
     GlitchRecipe("Infection", 0.85f, listOf(Virus, CodeWall), HOT_PINK),
     GlitchRecipe("Deep Sort", 0.75f, listOf(PixelSort, RollingBar, Scanlines), VOID),
     GlitchRecipe("Ransomware", 0.9f, listOf(Tiled("PAY 5 BTC"), DataStream, BigText(listOf("YOUR FILES ARE ENCRYPTED", "ENCRYPTED"))), AMBER),
     GlitchRecipe("Heartbeat Grid", 0.94f, listOf(GridFloor, Heartbeat), TOXIC),
-    GlitchRecipe("Frozen", 0.78f, listOf(Checker, Tint, Cracks), ICE),
+    GlitchRecipe("Lockdown", 0.78f, listOf(Checker, Tint, Cracks), ICE),
     GlitchRecipe("Fatal Exception", 1f, listOf(BlueScreen, Tears), BLOOD),
     GlitchRecipe("Signal Lost", 0.75f, listOf(Vhs, StaticNoise, BigText(listOf("SIGNAL LOST", "LOST"))), AMBER),
     GlitchRecipe("Laser Grid", 0.94f, listOf(GridFloor, Radar), BLOOD),
@@ -133,9 +134,9 @@ val GLITCH_RECIPES: List<GlitchRecipe> = listOf(
     GlitchRecipe("Total Chaos", 0.72f, listOf(Blocks, Slices, Tears, Popups, Cracks), SYNTH),
 )
 
-/** The "starting in" screen before Mr. Robot. `n` is the seconds left. */
+/** The "starting in" screen before Zero Day. `n` is the seconds left. */
 fun countdownRecipe(n: Int) = GlitchRecipe(
-    "Countdown", 0.6f, listOf(Scanlines, Tears, BigText(listOf("MR. ROBOT IN $n", "$n"))), TOXIC,
+    "Countdown", 0.6f, listOf(Scanlines, Tears, BigText(listOf("ZERO DAY IN $n", "$n"))), TOXIC,
 )
 
 // Rendering -------------------------------------------------------------------
@@ -185,7 +186,11 @@ fun renderTakeover(recipe: GlitchRecipe, r: Box, t: Float, seed: Int, pulse: Flo
             is Tiled -> tiled(r, t, pal, layer.word, g)
         }
     }
-    if (pulse > 0.01f) g.fill(r, gray(1f, 0.35f * pulse))
+    // Flashes are alarm red, with now and then a white one.
+    if (pulse > 0.01f) {
+        val white = (seed.toLong() and 0xFFFFFFFFL) % 4 == 0L
+        g.fill(r, (if (white) WHITE else argb(1f, 255, 0, 51)).withAlpha(0.4f * pulse))
+    }
     g.antialias = true
     g.restore()
 }
@@ -227,7 +232,7 @@ private fun staticNoise(r: Box, pal: List<Int>, f: GlitchRandom, g: Gfx) {
 }
 
 private fun colorBars(r: Box, f: GlitchRandom, g: Gfx) {
-    val bars = listOf(gray(0.8f), SYSTEM_YELLOW, SYSTEM_TEAL, SYSTEM_GREEN, SYSTEM_PINK, SYSTEM_RED, SYSTEM_BLUE)
+    val bars = listOf(gray(0.85f), rgb(0xFF0033), BLACK, rgb(0x00FF41), rgb(0xFFB000), rgb(0x8B0000), BLACK)
     val band = Box(r.minX, r.midY - r.height * 0.18f, r.width, r.height * 0.36f)
     val w = band.width / bars.size
     val shift = f.range(-20f, 20f)

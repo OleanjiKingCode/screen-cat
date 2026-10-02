@@ -46,13 +46,8 @@ fun parseHex(text: String): Int? {
 const val WHITE = -0x1
 const val BLACK = -0x1000000
 
-// Apple's system colours, used by the colour bars.
-val SYSTEM_YELLOW = rgb(0xFFCC00)
-val SYSTEM_TEAL = rgb(0x5AC8FA)
-val SYSTEM_GREEN = rgb(0x34C759)
+// Apple's system pink, the fallback inner-ear colour.
 val SYSTEM_PINK = rgb(0xFF2D55)
-val SYSTEM_RED = rgb(0xFF3B30)
-val SYSTEM_BLUE = rgb(0x007AFF)
 
 /**
  * A canvas that has already been flipped to y-up, plus the few drawing calls

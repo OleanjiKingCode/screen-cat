@@ -28,12 +28,13 @@ enum class GlitchStyle {
 
 /** The colours a breach can come in. */
 val GLITCH_ACCENTS = listOf(
-    argb(1f, 56, 255, 122),   // green
-    argb(1f, 51, 230, 255),   // cyan
-    argb(1f, 255, 77, 217),   // magenta
-    argb(1f, 255, 191, 51),   // amber
-    argb(1f, 255, 69, 77),    // red
-    argb(1f, 179, 128, 255),  // purple
+    // Terminal green, blood red, warning amber, fire orange, white, acid green.
+    argb(1f, 0, 255, 64),
+    argb(1f, 255, 0, 51),
+    argb(1f, 255, 176, 0),
+    argb(1f, 255, 59, 0),
+    argb(1f, 255, 255, 255),
+    argb(1f, 181, 255, 59),
 )
 
 private val ALARM_RED = argb(1f, 255, 59, 92)
@@ -191,7 +192,7 @@ private fun breachScanlines(r: Box, g: Gfx) {
 
 /** Sliced, shifted bars in the two halves of an RGB split. */
 private fun breachSlices(r: Box, flicker: GlitchRandom, g: Gfx) {
-    val tints = listOf(argb(0.28f, 255, 0, 153), argb(0.28f, 0, 230, 255), gray(1f, 0.12f))
+    val tints = listOf(argb(0.3f, 255, 0, 51), argb(0.28f, 0, 255, 64), gray(1f, 0.12f))
     for (i in 0 until 10) {
         val h = flicker.range(3f, 24f)
         g.fill(r.minX + flicker.range(-50f, 50f), flicker.range(r.minY, r.maxY - h),
@@ -307,7 +308,7 @@ private fun breachNoSignal(b: Breach, r: Box, flicker: GlitchRandom, g: Gfx) {
         }
         y += block
     }
-    val bars = listOf(gray(0.8f), SYSTEM_YELLOW, SYSTEM_TEAL, SYSTEM_GREEN, SYSTEM_PINK, SYSTEM_RED, SYSTEM_BLUE)
+    val bars = listOf(gray(0.85f), GLITCH_ACCENTS[1], BLACK, GLITCH_ACCENTS[0], GLITCH_ACCENTS[2], argb(1f, 140, 0, 0), BLACK)
     val band = Box(r.minX, r.midY - r.height * 0.15f, r.width, r.height * 0.3f)
     val barW = band.width / bars.size
     val shift = flicker.range(-12f, 12f)
