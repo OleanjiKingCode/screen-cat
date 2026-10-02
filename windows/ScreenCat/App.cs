@@ -269,14 +269,14 @@ public sealed class App : IDisposable
         var mode = new ToolStripMenuItem("Mode");
         normalItem = new ToolStripMenuItem("Normal", null, (_, _) => SetMode("normal"));
         crawlerItem = new ToolStripMenuItem("Crawler", null, (_, _) => SetMode("crawler"));
-        // Mr. Robot is a show, not a lasting mode: it runs once and the saved
+        // Zero Day is a show, not a lasting mode: it runs once and the saved
         // mode stays what it was.
-        var robot = new ToolStripMenuItem("Mr. Robot (3 min hack, starts now)", null, (_, _) =>
+        var zeroDay = new ToolStripMenuItem("Zero Day (3 min hack, starts now)", null, (_, _) =>
         {
-            ActivityLog.Shared.Cat("Mr. Robot started from the menu");
-            BeginIdleCrawl(3.2, Routine.MrRobot);
+            ActivityLog.Shared.Cat("Zero Day started from the menu");
+            BeginIdleCrawl(3.2, Routine.ZeroDay);
         });
-        mode.DropDownItems.AddRange(new ToolStripItem[] { normalItem, crawlerItem, robot });
+        mode.DropDownItems.AddRange(new ToolStripItem[] { normalItem, crawlerItem, zeroDay });
         m.Items.Add(mode);
         m.Items.Add(new ToolStripSeparator());
 
@@ -587,7 +587,7 @@ public sealed class App : IDisposable
         return true;
     }
 
-    /// Mr. Robot's hop: a random app one to three places left or right of the
+    /// Zero Day's hop: a random app one to three places left or right of the
     /// one in front, so it jumps around rather than stepping through in order.
     private bool SwitchToRandomApp()
     {
@@ -606,7 +606,7 @@ public sealed class App : IDisposable
     }
 
     /// Puts the idle crawl's glitch over the whole of the cat's screen, taskbar
-    /// included, and renders it every third frame (20 fps).
+    /// included, and renders it every third frame (20 fps), every second for Zero Day.
     private void UpdateTakeover(IdleCrawlBehavior idle)
     {
         var screen = currentScreen;
@@ -619,7 +619,8 @@ public sealed class App : IDisposable
             ActivityLog.Shared.Cat($"glitch style: {Takeover.Recipes[idle.RecipeIndex].Name}");
         }
         takeoverFrame++;
-        if (takeoverFrame % 3 != 0) return;
+        // Zero Day moves fast, so it renders at 30 fps; the idle crawl at 20.
+        if (takeoverFrame % (idle.Catless ? 2 : 3) != 0) return;
         double ui = scene.Ui;
         if (idle.CountdownLeft > 0)
         {
@@ -779,11 +780,11 @@ public sealed class App : IDisposable
         // bubble the right way up, so they stay on the bottom edge. So do the
         // crawls, which zap windows from below.
         bool mayUseWall = routine != Routine.Hungry && routine != Routine.Play && routine != Routine.Crawl
-            && routine != Routine.IdleCrawl && routine != Routine.MrRobot
+            && routine != Routine.IdleCrawl && routine != Routine.ZeroDay
             && Rng.Unit() < scene.Config.WallChance;
         var surface = mayUseWall ? (Rng.Bool() ? Surface.Left : Surface.Right) : Surface.Bottom;
         scene.SetStage(surface, work, scene.Cat.Size);
-        if (routine == Routine.IdleCrawl || routine == Routine.MrRobot) scene.CrawlTargets = CrawlTargets(screen);
+        if (routine == Routine.IdleCrawl || routine == Routine.ZeroDay) scene.CrawlTargets = CrawlTargets(screen);
         if (routine == Routine.Crawl)
         {
             scene.CrawlTargets = CrawlTargets(screen);
@@ -802,7 +803,7 @@ public sealed class App : IDisposable
         forced = force;
         scene.Cat.Wearing = PickOutfit(scene.Config);
         // A hacker wears shades.
-        if (routine is Routine.Crawl or Routine.IdleCrawl or Routine.MrRobot) scene.Cat.Wearing.Add(Accessory.Glasses);
+        if (routine is Routine.Crawl or Routine.IdleCrawl or Routine.ZeroDay) scene.Cat.Wearing.Add(Accessory.Glasses);
         if (behavior is IdleCrawlBehavior idle)
         {
             idle.RequestTargets = () => CrawlTargets(currentScreen ?? TargetScreen());
@@ -880,7 +881,7 @@ public sealed class App : IDisposable
         lastTick = now;
 
         // A touch or key: the glitch goes at once and the cat shrinks away.
-        // Mr. Robot ending on time takes the same exit.
+        // Zero Day ending on time takes the same exit.
         if (current is IdleCrawlBehavior crawling)
         {
             if (!crawling.IsExiting && TouchedSinceIdleCrawl())

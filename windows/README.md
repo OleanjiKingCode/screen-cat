@@ -2,7 +2,7 @@
 
 The Windows version of the purple desktop cat. Same routines, same movement
 rules, same outfit, same crawler mode, same 50 full-screen glitch styles and
-Mr. Robot. C# on .NET 8 with WinForms for the tray menu and plain Win32 for the
+Zero Day. C# on .NET 8 with WinForms for the tray menu and plain Win32 for the
 window. The Mac source in `../mac/Sources` is the spec; most files here are a
 line-by-line port of the Swift file with the same name.
 
@@ -67,8 +67,8 @@ Left or right click the tray cat.
   Break some apps (crawler)**: play a routine now. A menu pick ignores the
   blocked-app rule: if you ask for the cat, you get the cat.
 - **Crawl until I touch something**: start the idle crawl now.
-- **Mode**: **Normal**, **Crawler**, or **Mr. Robot (3 min hack, starts now)**.
-  Normal and Crawler are saved as `mode`; Mr. Robot runs once and leaves the
+- **Mode**: **Normal**, **Crawler**, or **Zero Day (3 min hack, starts now)**.
+  Normal and Crawler are saved as `mode`; Zero Day runs once and leaves the
   saved mode alone.
 - **Pause** / **Resume**.
 - **Show in screenshots && recordings**: ticked, the cat shows in captures.
@@ -88,6 +88,7 @@ Same keys and defaults as the Mac's `~/.screencat.json`; see the table in
 | `blockedApps` | Process names, not bundle ids, matched as case-insensitive substrings. Default: `vlc`, `mpc-hc`, `mpc-be`, `PotPlayer`, `mpv`, `wmplayer`, `Video.UI` (Movies & TV), `Microsoft.Media.Player` (Media Player), `Netflix`, `Plex`, `KMPlayer`, `GOM`. Store apps are matched by the app's own process, not `ApplicationFrameHost`. |
 | `windowLevel` | `"top"` and `"status"` keep the cat always on top. `"floating"` drops the always-on-top flag, so other windows can cover it. |
 | `hideFromCapture` | Uses `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, which needs Windows 10 version 2004 or later. Older builds show the cat in captures. |
+| `glitchSpeed`, `zeroDaySpeed` | Same as the Mac: 2 (0.25 to 16) for the idle crawl's glitch clock, 8 (1 to 16) for Zero Day. |
 | `sizeDivisor`, speeds | Measured in physical pixels of the working area (screen minus taskbar), so the cat is the same share of the screen at any display scale. |
 
 Comments and trailing commas in the JSON are tolerated. A broken file falls
@@ -126,7 +127,7 @@ Runs with nobody at the screen and writes to `out`:
   recolour matches the pack's exact colours; every frame crops out and the
   face is found for the accessories; every routine runs to the end on every
   edge it may use, legs never end higher than they start, and the idle crawl
-  and Mr. Robot never move steeper than `maxSlope`; all 50 glitch styles render,
+  and Zero Day never move steeper than `maxSlope`; all 50 glitch styles render,
   with milliseconds per frame; the overlay window can be made and updated, and
   whether capture exclusion was accepted.
 - `preview.png`: every clip, with and without the outfit, plus the bubble,
@@ -158,27 +159,34 @@ Runs with nobody at the screen and writes to `out`:
   and the five breach styles in the six accent colours.
 - **Idle crawl**: after `idleCrawlSeconds` (120) with no input, the walk in,
   the 2x grow with pulsing rings, then the whole screen (taskbar too) turns into
-  a glitch that stays, a new style every `glitchStyleSeconds`, the cat roaming
-  up, down and sideways with depth shrink and zig-zags, zapping windows, and at
-  the edge bringing the next app's window forward. Any input ends it: the glitch
+  a glitch that stays, animated at `glitchSpeed` (2x) with a new style every
+  `glitchStyleSeconds` of glitch time. The cat roams up, down and sideways
+  with depth shrink and zig-zags, zaps at most two windows and visits one open
+  spot per screen, then at the edge bringing the next app's window forward. Any input ends it: the glitch
   goes at once, the cat shrinks to nothing over 0.8 s, and the window you were
   in comes back. It does not start while a blocked app is in front or
   fullscreen.
 - **The 50 glitch styles**: the same names, layers and palettes, rendered at
-  half resolution (in logical pixels) about 20 times a second and scaled up
+  half resolution (in logical pixels) about 20 times a second (30 for Zero
+  Day) and scaled up
   nearest-neighbour under the cat.
-- **Mr. Robot**: no cat at all. A 3 second "MR. ROBOT IN 3" countdown (input
+- **Zero Day**: no cat at all. A 3 second "ZERO DAY IN 3" countdown (input
   ignored, so the click that started it does not stop it), then the whole
-  screen glitches at 4x speed straight away (0.3 s fade in) with random flash
-  bursts. Every 4 to 7 seconds it hops to a random app one to three places left
+  screen glitches at `zeroDaySpeed` (8x) straight away (0.3 s fade in) with random flash
+  bursts. Every 1.5 to 3 seconds it hops to a random app one to three places left
   or right of the one in front, in the name-sorted list of switchable windows;
-  during the 1.3 s hop the glitch dims to 25% so you glimpse the app, then a new
+  during the 0.8 s hop the glitch dims to 25% so you glimpse the app, then a new
   style starts. It ends after three minutes or at the first input: the glitch
   clears at once and the window you started in comes back. It does not change
   the saved mode.
 - **Hacker text, no cat theme in the glitches**: the same renamed styles
   (Kernel Panic, Root Wall, Worm Outbreak, Access Denied, Ransomware, Fatal
-  Exception) and the same code, crash screen, popup and loading text as the Mac.
+  Exception, Binary Rain, Blood Rain, Grid Runner, Red Haze, Firewall Melt,
+  Breach Tunnel, Signal Intercept, Lockdown) and the same code, crash screen,
+  popup and loading text as the Mac.
+- **Danger colours only**: every palette, accent, slice tint and colour bar is
+  red, green, amber or white on black, and zap flashes are alarm red (white one
+  time in four), as on the Mac.
 
 ## What differs, and why
 

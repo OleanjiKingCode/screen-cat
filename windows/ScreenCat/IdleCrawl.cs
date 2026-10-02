@@ -25,7 +25,7 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     private enum Stage
     {
         Countdown, Entering, Growing, Moving, Zapping, Resting, Switching, Arriving, Exiting,
-        // Mr. Robot only: glitch on, then hop to a random app.
+        // Zero Day only: glitch on, then hop to a random app.
         Hacking, Hopping,
     }
     private Stage stage = Stage.Entering;
@@ -52,13 +52,13 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     private readonly double baseSize;
     private double GrowDuration => Speed > 1 ? 1 : 3;
 
-    /// 1 for the idle crawl. Mr. Robot runs at 4: glitches animate and change
+    /// 1 for the idle crawl. Zero Day runs at 4: glitches animate and change
     /// four times as fast, and the cat moves twice as fast and hops apps
     /// after one stop instead of wandering each one.
     public readonly double Speed;
-    /// Ends by itself after this many seconds (Mr. Robot's three minutes).
+    /// Ends by itself after this many seconds (Zero Day's three minutes).
     public readonly double? MaxDuration;
-    /// Mr. Robot: no cat at all. The screen glitches and jumps between apps
+    /// Zero Day: no cat at all. The screen glitches and jumps between apps
     /// in random order, with bursts of flashes and a new style on every hop.
     public readonly bool Catless;
     private double burstTimer;
@@ -114,7 +114,7 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
         }
     }
 
-    /// Any touch, or the end of Mr. Robot: the glitch goes at once, and the
+    /// Any touch, or the end of Zero Day: the glitch goes at once, and the
     /// cat shrinks away to nothing where it stands.
     public void BeginExit()
     {
@@ -154,15 +154,15 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     {
         var s = scene.Stage;
         double top = s.MaxY - scene.Cat.Size * 1.3;
-        // Mr. Robot hops apps fast: one window, no wandering.
-        if (Speed > 1) windows = windows.Take(1).ToList();
+        // Zero Day hops apps fast: one window, no wandering.
+        windows = windows.Take(Speed > 1 ? 1 : 2).ToList();
         var list = windows.Select(w =>
         {
             double inset = Math.Min(scene.Cat.Size, w.Width / 3);
             double lo = w.MinX + inset, hi = Math.Max(lo, w.MaxX - inset);
             return new Stop(new Vec(Rng.Range(lo, hi), Math.Min(Math.Max(w.MinY, s.MinY), top)), w);
         }).ToList();
-        int extra = Speed > 1 ? (windows.Count == 0 ? 1 : 0) : Rng.IntIn(2, 3);
+        int extra = Speed > 1 ? (windows.Count == 0 ? 1 : 0) : 1;
         for (int i = 0; i < extra; i++)
         {
             list.Add(new Stop(new Vec(Rng.Range(s.MinX + s.Width * 0.1, s.MaxX - s.Width * 0.1),
@@ -195,8 +195,8 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     {
         if (Zap is Zap z) Zap = z with { Age = z.Age + dt };
         Pulse = Math.Max(0, Pulse - dt * 1.5);
-        // Fades in over 1.2s (0.3s for Mr. Robot), out over 0.4s so the next
-        // app shows promptly. While Mr. Robot hops it only dims, so the new
+        // Fades in over 1.2s (0.3s for Zero Day), out over 0.4s so the next
+        // app shows promptly. While Zero Day hops it only dims, so the new
         // app is glimpsed through the glitch.
         double level = takeoverOn ? (stage == Stage.Hopping ? 0.25 : 1) : 0;
         double rise = Catless ? 0.3 : 1.2;
@@ -205,7 +205,9 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
             : Math.Max(level, TakeoverOpacity - dt / 0.4);
         if (TakeoverOpacity > 0)
         {
-            StyleTime += dt * Speed;
+            // Zero Day runs its glitches at its own speed; the idle crawl at
+            // `glitchSpeed`.
+            StyleTime += dt * (Catless ? Speed : scene.Config.GlitchSpeed);
             if (StyleTime >= scene.Config.GlitchStyleSeconds) NextStyle();
         }
         var cat = scene.Cat;
@@ -226,7 +228,7 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
                     {
                         takeoverOn = true;
                         NextStyle();
-                        timer = Rng.Range(4, 7);
+                        timer = Rng.Range(1.5, 3);
                         stage = Stage.Hacking;
                     }
                     else
@@ -249,13 +251,13 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
                 {
                     if (RequestRandomApp?.Invoke() == true)
                     {
-                        timer = 1.3;
+                        timer = 0.8;
                         stage = Stage.Hopping;
                     }
                     else
                     {
                         NextStyle();
-                        timer = Rng.Range(4, 7);
+                        timer = Rng.Range(1.5, 3);
                     }
                 }
                 break;
@@ -265,7 +267,7 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
                 if (timer <= 0)
                 {
                     NextStyle();
-                    timer = Rng.Range(4, 7);
+                    timer = Rng.Range(1.5, 3);
                     stage = Stage.Hacking;
                 }
                 break;

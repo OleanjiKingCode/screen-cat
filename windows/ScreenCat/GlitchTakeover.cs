@@ -71,17 +71,18 @@ public static class Takeover
 {
     private static Rgba H(uint v) => Rgba.Hex(v);
 
-    private static readonly Rgba[] Toxic = { H(0x39FF7A), H(0xB6FF3B), H(0x0B6E34) };
-    private static readonly Rgba[] Ice = { H(0x33E6FF), H(0xBDF4FF), H(0x1E6BFF) };
-    private static readonly Rgba[] HotPink = { H(0xFF4DD8), H(0xFF8FD1), H(0x8A2BE2) };
-    private static readonly Rgba[] Amber = { H(0xFFBF33), H(0xFF7A1A), H(0xFFE08A) };
-    private static readonly Rgba[] Blood = { H(0xFF3B4A), H(0xFF8A80), H(0x8A0016) };
-    private static readonly Rgba[] Synth = { H(0xFF2E97), H(0x00E5FF), H(0xFFD319) };
-    private static readonly Rgba[] Ghost = { H(0xFFFFFF), H(0xB0B0B0), H(0x5A5A5A) };
-    // Purple and gold.
-    private static readonly Rgba[] Royal = { H(0xA87BE0), H(0xFFC94A), H(0x5B2D91) };
-    private static readonly Rgba[] Sunset = { H(0xFF6B35), H(0xF7C59F), H(0x2EC4B6) };
-    private static readonly Rgba[] Void = { H(0xE0AAFF), H(0x9D4EDD), H(0x3C096C) };
+    // Danger colours only: blood red, terminal green, warning amber, white on
+    // black. Each palette is [main, highlight, deep].
+    private static readonly Rgba[] Toxic = { H(0x00FF41), H(0xB6FF3B), H(0x003B10) };
+    private static readonly Rgba[] Ice = { H(0x00FF41), H(0xFFFFFF), H(0x0A2A0A) };
+    private static readonly Rgba[] HotPink = { H(0xFF0033), H(0x00FF41), H(0x2A0008) };
+    private static readonly Rgba[] Amber = { H(0xFFB000), H(0xFF3B00), H(0x2B1600) };
+    private static readonly Rgba[] Blood = { H(0xFF0033), H(0xFF5C5C), H(0x4D0000) };
+    private static readonly Rgba[] Synth = { H(0xFF0033), H(0xFFFFFF), H(0x00FF41) };
+    private static readonly Rgba[] Ghost = { H(0xFFFFFF), H(0xFF0033), H(0x333333) };
+    private static readonly Rgba[] Royal = { H(0xFF0033), H(0xFFB000), H(0x1A0000) };
+    private static readonly Rgba[] Sunset = { H(0xFF3B00), H(0xFFB000), H(0x2B0A00) };
+    private static readonly Rgba[] Void = { H(0xFF0033), H(0x8B0000), H(0x0D0000) };
 
     private const string Kana = "アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789";
 
@@ -100,8 +101,8 @@ public static class Takeover
     {
         R("Green Breach", 0.7, Toxic, Scanlines, Slices, TakeoverLayer.CodeWall, TakeoverLayer.Cracks, TakeoverLayer.BigText("SYSTEM BREACHED", "BREACHED")),
         R("Digital Rain", 0.92, Toxic, TakeoverLayer.Matrix(Kana), RollingBar),
-        R("Ice Rain", 0.92, Ice, TakeoverLayer.Matrix("01"), Scanlines),
-        R("Pink Rain", 0.92, HotPink, TakeoverLayer.Matrix(Kana), Tint),
+        R("Binary Rain", 0.92, Ice, TakeoverLayer.Matrix("01"), Scanlines),
+        R("Blood Rain", 0.92, HotPink, TakeoverLayer.Matrix(Kana), Tint),
         R("Kernel Panic", 1, Ice, TakeoverLayer.BlueScreen),
         R("No Signal", 0.7, Ghost, StaticNoise, ColorBars, RollingBar, TakeoverLayer.BigText("NO SIGNAL")),
         R("Amber Static", 0.75, Amber, StaticNoise, Scanlines, Tint),
@@ -116,7 +117,7 @@ public static class Takeover
         R("Warp Speed", 0.96, Ice, TakeoverLayer.Warp),
         R("Oscilloscope", 0.92, Toxic, TakeoverLayer.Scope, Scanlines),
         R("Flatline", 0.94, Blood, TakeoverLayer.Heartbeat, Scanlines),
-        R("Outrun", 0.96, Synth, TakeoverLayer.GridFloor, Scanlines),
+        R("Grid Runner", 0.96, Synth, TakeoverLayer.GridFloor, Scanlines),
         R("RGB Waves", 0.78, Synth, TakeoverLayer.Waves, Slices),
         R("Checker Panic", 0.72, Blood, TakeoverLayer.Checker, TakeoverLayer.BigText("ALERT")),
         R("Root Wall", 0.88, Royal, TakeoverLayer.Tiled("ROOT ACCESS"), Scanlines),
@@ -126,23 +127,23 @@ public static class Takeover
         R("Hex Dump", 0.94, Amber, TakeoverLayer.HexWall, RollingBar),
         R("Root Shell", 0.94, Toxic, TakeoverLayer.CodeWall, Scanlines),
         R("Data Stream", 0.92, Ice, TakeoverLayer.DataStream, Scanlines),
-        R("Purple Haze", 0.8, Void, TakeoverLayer.Waves, Tint, StaticNoise),
+        R("Red Haze", 0.8, Void, TakeoverLayer.Waves, Tint, StaticNoise),
         R("Ghost Signal", 0.78, Ghost, StaticNoise, Tears, TakeoverLayer.BigText("WE ARE INSIDE", "INSIDE")),
         R("Red Alert", 0.82, Blood, RollingBar, TakeoverLayer.Checker, TakeoverLayer.BigText("SELF DESTRUCT IN #", "BOOM IN #")),
-        R("Sunset Melt", 0.72, Sunset, TakeoverLayer.Melt, TakeoverLayer.Waves),
-        R("Neon Tunnel", 0.92, Synth, TakeoverLayer.Tunnel, TakeoverLayer.Warp),
+        R("Firewall Melt", 0.72, Sunset, TakeoverLayer.Melt, TakeoverLayer.Waves),
+        R("Breach Tunnel", 0.92, Synth, TakeoverLayer.Tunnel, TakeoverLayer.Warp),
         R("Matrix Breach", 0.88, Toxic, TakeoverLayer.Matrix(Kana), TakeoverLayer.Cracks, TakeoverLayer.BigText("ACCESS GRANTED", "GRANTED")),
         R("Static Rain", 0.85, Ghost, StaticNoise, TakeoverLayer.Matrix("01")),
         R("Glitch Mosaic", 0.72, Royal, TakeoverLayer.Blocks, TakeoverLayer.Checker),
         R("Broken Display", 0.72, Ghost, Tears, ColorBars, Slices, TakeoverLayer.Cracks),
         R("Radar Rain", 0.92, Ice, TakeoverLayer.Radar, TakeoverLayer.Matrix("01")),
-        R("Synthwave Scope", 0.96, Synth, TakeoverLayer.GridFloor, TakeoverLayer.Scope),
+        R("Signal Intercept", 0.96, Synth, TakeoverLayer.GridFloor, TakeoverLayer.Scope),
         R("Access Denied", 0.75, Blood, TakeoverLayer.Tiled("ACCESS DENIED"), TakeoverLayer.Popups),
         R("Infection", 0.85, HotPink, TakeoverLayer.Virus, TakeoverLayer.CodeWall),
         R("Deep Sort", 0.75, Void, TakeoverLayer.PixelSort, RollingBar, Scanlines),
         R("Ransomware", 0.9, Amber, TakeoverLayer.Tiled("PAY 5 BTC"), TakeoverLayer.DataStream, TakeoverLayer.BigText("YOUR FILES ARE ENCRYPTED", "ENCRYPTED")),
         R("Heartbeat Grid", 0.94, Toxic, TakeoverLayer.GridFloor, TakeoverLayer.Heartbeat),
-        R("Frozen", 0.78, Ice, TakeoverLayer.Checker, Tint, TakeoverLayer.Cracks),
+        R("Lockdown", 0.78, Ice, TakeoverLayer.Checker, Tint, TakeoverLayer.Cracks),
         R("Fatal Exception", 1, Blood, TakeoverLayer.BlueScreen, Tears),
         R("Signal Lost", 0.75, Amber, TakeoverLayer.Vhs, StaticNoise, TakeoverLayer.BigText("SIGNAL LOST", "LOST")),
         R("Laser Grid", 0.94, Blood, TakeoverLayer.GridFloor, TakeoverLayer.Radar),
@@ -150,9 +151,9 @@ public static class Takeover
         R("Total Chaos", 0.72, Synth, TakeoverLayer.Blocks, Slices, Tears, TakeoverLayer.Popups, TakeoverLayer.Cracks),
     };
 
-    /// The "starting in" screen before Mr. Robot. `n` is the seconds left.
+    /// The "starting in" screen before Zero Day. `n` is the seconds left.
     public static GlitchRecipe CountdownRecipe(int n) =>
-        R("Countdown", 0.6, Toxic, Scanlines, Tears, TakeoverLayer.BigText($"MR. ROBOT IN {n}", $"{n}"));
+        R("Countdown", 0.6, Toxic, Scanlines, Tears, TakeoverLayer.BigText($"ZERO DAY IN {n}", $"{n}"));
 
     // Rendering ----------------------------------------------------------
 
@@ -202,7 +203,12 @@ public static class Takeover
                 case LayerKind.Tiled: DrawTiled(r, t, pal, layer.Text, ctx); break;
             }
         }
-        if (pulse > 0.01) ctx.FillRect(r, Rgba.White(1, 0.35 * pulse));
+        // Flashes are alarm red, with now and then a white one.
+        if (pulse > 0.01)
+        {
+            var flash = seed % 4 == 0 ? Rgba.WhiteColor : new Rgba(1, 0, 0.2);
+            ctx.FillRect(r, flash.WithAlpha(0.4 * pulse));
+        }
         ctx.Restore();
     }
 
@@ -248,9 +254,14 @@ public static class Takeover
         }
     }
 
+    private static readonly Rgba[] TakeoverBars =
+    {
+        Rgba.White(0.85), H(0xFF0033), Rgba.Black, H(0x00FF41), H(0xFFB000), H(0x8B0000), Rgba.Black,
+    };
+
     private static void DrawColorBars(RectD r, ref GlitchRandom f, Canvas ctx)
     {
-        var bars = Glitch.Bars;
+        var bars = TakeoverBars;
         var band = new RectD(r.MinX, r.MidY - r.Height * 0.18, r.Width, r.Height * 0.36);
         double w = band.Width / bars.Length;
         double shift = f.Range(-20, 20);

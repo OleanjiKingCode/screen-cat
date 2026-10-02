@@ -762,7 +762,7 @@ public enum Routine
     /// The nonstop crawl that runs while you are away from the PC.
     IdleCrawl,
     /// Three minutes of the idle crawl at four times the pace.
-    MrRobot,
+    ZeroDay,
 }
 
 public static class Helpers
@@ -776,7 +776,7 @@ public static class Helpers
         Routine.Play => "play",
         Routine.Crawl => "crawl",
         Routine.IdleCrawl => "idlecrawl",
-        _ => "mrrobot",
+        _ => "zeroday",
     };
 
     public static IBehavior MakeBehavior(Routine routine, Scene scene)
@@ -797,8 +797,8 @@ public static class Helpers
                 return new CrawlBehavior(scene, scene.CrawlTargets);
             case Routine.IdleCrawl:
                 return new IdleCrawlBehavior(scene, scene.CrawlTargets);
-            case Routine.MrRobot:
-                return new IdleCrawlBehavior(scene, scene.CrawlTargets, speed: 4, maxDuration: 180, countdown: 3, catless: true);
+            case Routine.ZeroDay:
+                return new IdleCrawlBehavior(scene, scene.CrawlTargets, speed: scene.Config.ZeroDaySpeed, maxDuration: 180, countdown: 3, catless: true);
             case Routine.Nap:
             {
                 // Naps happen at the sides, and the walk in and out is level, so the cat

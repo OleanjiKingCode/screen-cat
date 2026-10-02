@@ -65,6 +65,9 @@ public static class SelfTest
     private static void Settings()
     {
         var d = Config.Parse(Config.DefaultJson());
+        Check(d.GlitchSpeed == 2 && d.ZeroDaySpeed == 8, "glitchSpeed and zeroDaySpeed default to 2 and 8");
+        var fast = Config.Parse("{\"glitchSpeed\": 100, \"zeroDaySpeed\": 0}");
+        Check(fast.GlitchSpeed == 16 && fast.ZeroDaySpeed == 1, "glitchSpeed and zeroDaySpeed are clamped");
         Check(d.SizeDivisor == 24 && d.MinGapSeconds == 3 && d.MaxGapSeconds == 15 && d.MaxSlope == 0.45
               && d.GlitchStyleSeconds == 60 && d.IdleCrawlSeconds == 120 && d.GrowScale == 2,
             "default settings round-trip with the Mac defaults");
@@ -145,7 +148,7 @@ public static class SelfTest
     {
         var screen = new RectD(0, 0, 1920, 1040);
         var trail = new List<Vec>();
-        foreach (var routine in new[] { Routine.Stroll, Routine.Nap, Routine.Ball, Routine.Hungry, Routine.Play, Routine.Crawl, Routine.IdleCrawl, Routine.MrRobot })
+        foreach (var routine in new[] { Routine.Stroll, Routine.Nap, Routine.Ball, Routine.Hungry, Routine.Play, Routine.Crawl, Routine.IdleCrawl, Routine.ZeroDay })
         {
             var surfaces = routine is Routine.Stroll or Routine.Nap or Routine.Ball
                 ? new[] { Surface.Bottom, Surface.Left, Surface.Right }
@@ -175,7 +178,7 @@ public static class SelfTest
                     }
                     // Roaming the whole screen holds the steepest allowed slope
                     // and zig-zags beyond it.
-                    if (routine is Routine.IdleCrawl or Routine.MrRobot && r.steepest > new Config().MaxSlope + 0.01)
+                    if (routine is Routine.IdleCrawl or Routine.ZeroDay && r.steepest > new Config().MaxSlope + 0.01)
                     {
                         Check(false, $"{routine.Name()} on the {surface.Name()} went {r.steepest:0.00} steep");
                         goto nextRoutine;
@@ -186,7 +189,7 @@ public static class SelfTest
             nextRoutine:;
         }
 
-        MrRobotCheck();
+        ZeroDayCheck();
 
         // Where a stroll went, drawn as dots on a scaled-down screen.
         using var canvas = new Canvas(960, 520);
@@ -197,26 +200,26 @@ public static class SelfTest
         Line($"wrote {Path.GetFileName(trailPath)}");
     }
 
-    /// Mr. Robot has no cat: after the countdown the glitch is on, it hops
+    /// Zero Day has no cat: after the countdown the glitch is on, it hops
     /// apps every 4 to 7 seconds, and the cat never shows.
-    private static void MrRobotCheck()
+    private static void ZeroDayCheck()
     {
         var scene = new Scene { Config = new Config() };
         scene.Cat.Size = 43;
         scene.SetStage(Surface.Bottom, new RectD(0, 0, 1920, 1040), scene.Cat.Size);
-        var robot = (IdleCrawlBehavior)Helpers.MakeBehavior(Routine.MrRobot, scene);
+        var zeroDay = (IdleCrawlBehavior)Helpers.MakeBehavior(Routine.ZeroDay, scene);
         int hops = 0;
-        robot.RequestRandomApp = () => { hops++; return true; };
+        zeroDay.RequestRandomApp = () => { hops++; return true; };
         bool catSeen = false;
         double peak = 0;
         for (double t = 0; t < 30; t += 1.0 / 60)
         {
-            robot.Update(1.0 / 60, scene);
+            zeroDay.Update(1.0 / 60, scene);
             if (scene.Cat.Visible) catSeen = true;
-            peak = Math.Max(peak, robot.TakeoverOpacity);
+            peak = Math.Max(peak, zeroDay.TakeoverOpacity);
         }
-        Check(!catSeen && hops >= 3 && peak >= 0.99,
-            $"mr. robot shows no cat, the glitch reaches full strength and it hopped apps {hops} times in 30 s");
+        Check(!catSeen && hops >= 6 && peak >= 0.99,
+            $"zero day shows no cat, the glitch reaches full strength and it hopped apps {hops} times in 30 s");
     }
 
     private static (bool finished, double seconds, double climbed, double steepest, double size, string? error) Simulate(

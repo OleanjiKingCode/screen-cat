@@ -84,12 +84,12 @@ public static class Glitch
     /// The colours a breach can come in.
     public static readonly Rgba[] Accents =
     {
-        new(0.22, 1.0, 0.48),  // green
-        new(0.2, 0.9, 1.0),    // cyan
-        new(1.0, 0.3, 0.85),   // magenta
-        new(1.0, 0.75, 0.2),   // amber
-        new(1.0, 0.27, 0.3),   // red
-        new(0.7, 0.5, 1.0),    // purple
+        new(0.0, 1.0, 0.25),   // terminal green
+        new(1.0, 0.0, 0.2),    // blood red
+        new(1.0, 0.69, 0.0),   // warning amber
+        new(1.0, 0.23, 0.0),   // fire orange
+        new(1.0, 1.0, 1.0),    // white
+        new(0.71, 1.0, 0.23),  // acid green
     };
 
     private static readonly Rgba AlarmRed = new(1.0, 0.23, 0.36);
@@ -216,7 +216,7 @@ public static class Glitch
     /// Sliced, shifted bars in the two halves of an RGB split.
     private static void DrawSlices(RectD r, ref GlitchRandom flicker, Canvas ctx, double u)
     {
-        Rgba[] tints = { new(1, 0, 0.6, 0.28), new(0, 0.9, 1, 0.28), Rgba.White(1, 0.12) };
+        Rgba[] tints = { new(1, 0, 0.2, 0.3), new(0, 1, 0.25, 0.28), Rgba.White(1, 0.12) };
         for (int i = 0; i < 10; i++)
         {
             double h = flicker.Range(3, 24) * u;
@@ -333,16 +333,10 @@ public static class Glitch
         }
     }
 
-    /// The seven colour bars, the ones macOS calls its system colours.
+    /// The seven colour bars of the breach's "no signal": danger colours only.
     public static readonly Rgba[] Bars =
     {
-        Rgba.White(0.8),
-        Rgba.Hex(0xFFCC00), // yellow
-        Rgba.Hex(0x30B0C7), // teal
-        Rgba.Hex(0x34C759), // green
-        Rgba.Hex(0xFF2D55), // pink
-        Rgba.Hex(0xFF3B30), // red
-        Rgba.Hex(0x007AFF), // blue
+        Rgba.White(0.85), Accents[1], Rgba.Black, Accents[0], Accents[2], new Rgba(0.55, 0, 0), Rgba.Black,
     };
 
     /// TV static with a band of colour bars and a rolling bright bar.

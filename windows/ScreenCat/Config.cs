@@ -111,6 +111,10 @@ public sealed class Config
     public double GrowScale = 2;
     /// How long each full-screen glitch style plays before the next one.
     public double GlitchStyleSeconds = 60;
+    /// How fast the idle crawl's glitches animate and change. Zero Day runs
+    /// at `zeroDaySpeed`.
+    public double GlitchSpeed = 2;
+    public double ZeroDaySpeed = 8;
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary in %LOCALAPPDATA%\ScreenCat\Logs. Local only.
@@ -243,6 +247,8 @@ public sealed class Config
         c.IdleCrawlSeconds = Num("idleCrawlSeconds") ?? c.IdleCrawlSeconds;
         c.GlitchStyleSeconds = Num("glitchStyleSeconds") ?? c.GlitchStyleSeconds;
         c.GrowScale = Num("growScale") ?? c.GrowScale;
+        c.GlitchSpeed = Num("glitchSpeed") ?? c.GlitchSpeed;
+        c.ZeroDaySpeed = Num("zeroDaySpeed") ?? c.ZeroDaySpeed;
         c.ActivityLog = Bool("activityLog") ?? c.ActivityLog;
         c.ActivityLogDays = Num("activityLogDays") ?? c.ActivityLogDays;
         c.Opacity = Num("opacity") ?? c.Opacity;
@@ -268,6 +274,8 @@ public sealed class Config
         c.IdleCrawlSeconds = Math.Max(15, c.IdleCrawlSeconds);
         c.GlitchStyleSeconds = Math.Max(5, c.GlitchStyleSeconds);
         c.GrowScale = Math.Clamp(c.GrowScale, 1, 4);
+        c.GlitchSpeed = Math.Clamp(c.GlitchSpeed, 0.25, 16);
+        c.ZeroDaySpeed = Math.Clamp(c.ZeroDaySpeed, 1, 16);
         c.ChainChance = Math.Clamp(c.ChainChance, 0, 1);
         c.GlassesChance = Math.Clamp(c.GlassesChance, 0, 1);
         return c;
@@ -376,6 +384,8 @@ public sealed class Config
             ["idleCrawlSeconds"] = d.IdleCrawlSeconds,
             ["glitchStyleSeconds"] = d.GlitchStyleSeconds,
             ["growScale"] = d.GrowScale,
+            ["glitchSpeed"] = d.GlitchSpeed,
+            ["zeroDaySpeed"] = d.ZeroDaySpeed,
             ["activityLog"] = d.ActivityLog,
             ["activityLogDays"] = d.ActivityLogDays,
             ["opacity"] = d.Opacity,
