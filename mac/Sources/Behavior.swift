@@ -671,8 +671,8 @@ enum Routine: String, CaseIterable {
     case stroll, nap, ball, hungry, play, crawl
     /// The nonstop crawl that runs while you are away from the Mac.
     case idleCrawl = "idlecrawl"
-    /// Three minutes of the idle crawl at four times the pace.
-    case mrRobot = "mrrobot"
+    /// Zero Day: three minutes of catless glitching at high speed.
+    case zeroDay = "zeroday"
 }
 
 func makeBehavior(_ routine: Routine, scene: Scene) -> Behavior {
@@ -696,8 +696,8 @@ func makeBehavior(_ routine: Routine, scene: Scene) -> Behavior {
     case .idleCrawl:
         return IdleCrawlBehavior(scene: scene, targets: scene.crawlTargets)
 
-    case .mrRobot:
-        return IdleCrawlBehavior(scene: scene, targets: scene.crawlTargets, speed: 4,
+    case .zeroDay:
+        return IdleCrawlBehavior(scene: scene, targets: scene.crawlTargets, speed: scene.config.zeroDaySpeed,
                                  maxDuration: 180, countdown: 3, catless: true)
 
     case .stroll:

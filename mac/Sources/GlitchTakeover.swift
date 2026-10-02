@@ -34,17 +34,18 @@ private func hex(_ v: UInt32) -> NSColor {
             blue: CGFloat(v & 0xFF) / 255, alpha: 1)
 }
 
-private let toxic = [hex(0x39FF7A), hex(0xB6FF3B), hex(0x0B6E34)]
-private let ice = [hex(0x33E6FF), hex(0xBDF4FF), hex(0x1E6BFF)]
-private let hotPink = [hex(0xFF4DD8), hex(0xFF8FD1), hex(0x8A2BE2)]
-private let amber = [hex(0xFFBF33), hex(0xFF7A1A), hex(0xFFE08A)]
-private let blood = [hex(0xFF3B4A), hex(0xFF8A80), hex(0x8A0016)]
-private let synth = [hex(0xFF2E97), hex(0x00E5FF), hex(0xFFD319)]
-private let ghost = [hex(0xFFFFFF), hex(0xB0B0B0), hex(0x5A5A5A)]
-// Purple and gold.
-private let royal = [hex(0xA87BE0), hex(0xFFC94A), hex(0x5B2D91)]
-private let sunset = [hex(0xFF6B35), hex(0xF7C59F), hex(0x2EC4B6)]
-private let void = [hex(0xE0AAFF), hex(0x9D4EDD), hex(0x3C096C)]
+// Danger colours only: blood red, terminal green, warning amber, white on
+// black. Each palette is [main, highlight, deep].
+private let toxic = [hex(0x00FF41), hex(0xB6FF3B), hex(0x003B10)]
+private let ice = [hex(0x00FF41), hex(0xFFFFFF), hex(0x0A2A0A)]
+private let hotPink = [hex(0xFF0033), hex(0x00FF41), hex(0x2A0008)]
+private let amber = [hex(0xFFB000), hex(0xFF3B00), hex(0x2B1600)]
+private let blood = [hex(0xFF0033), hex(0xFF5C5C), hex(0x4D0000)]
+private let synth = [hex(0xFF0033), hex(0xFFFFFF), hex(0x00FF41)]
+private let ghost = [hex(0xFFFFFF), hex(0xFF0033), hex(0x333333)]
+private let royal = [hex(0xFF0033), hex(0xFFB000), hex(0x1A0000)]
+private let sunset = [hex(0xFF3B00), hex(0xFFB000), hex(0x2B0A00)]
+private let void = [hex(0xFF0033), hex(0x8B0000), hex(0x0D0000)]
 
 private let kana = "アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789"
 
@@ -52,8 +53,8 @@ private let kana = "アイウエオカキクケコサシスセソタチツテト
 let glitchRecipes: [GlitchRecipe] = [
     GlitchRecipe(name: "Green Breach", dim: 0.7, layers: [.scanlines, .slices, .codeWall, .cracks, .bigText(["SYSTEM BREACHED", "BREACHED"])], palette: toxic),
     GlitchRecipe(name: "Digital Rain", dim: 0.92, layers: [.matrix(kana), .rollingBar], palette: toxic),
-    GlitchRecipe(name: "Ice Rain", dim: 0.92, layers: [.matrix("01"), .scanlines], palette: ice),
-    GlitchRecipe(name: "Pink Rain", dim: 0.92, layers: [.matrix(kana), .tint], palette: hotPink),
+    GlitchRecipe(name: "Binary Rain", dim: 0.92, layers: [.matrix("01"), .scanlines], palette: ice),
+    GlitchRecipe(name: "Blood Rain", dim: 0.92, layers: [.matrix(kana), .tint], palette: hotPink),
     GlitchRecipe(name: "Kernel Panic", dim: 1, layers: [.blueScreen], palette: ice),
     GlitchRecipe(name: "No Signal", dim: 0.7, layers: [.staticNoise, .colorBars, .rollingBar, .bigText(["NO SIGNAL"])], palette: ghost),
     GlitchRecipe(name: "Amber Static", dim: 0.75, layers: [.staticNoise, .scanlines, .tint], palette: amber),
@@ -68,7 +69,7 @@ let glitchRecipes: [GlitchRecipe] = [
     GlitchRecipe(name: "Warp Speed", dim: 0.96, layers: [.warp], palette: ice),
     GlitchRecipe(name: "Oscilloscope", dim: 0.92, layers: [.scope, .scanlines], palette: toxic),
     GlitchRecipe(name: "Flatline", dim: 0.94, layers: [.heartbeat, .scanlines], palette: blood),
-    GlitchRecipe(name: "Outrun", dim: 0.96, layers: [.gridFloor, .scanlines], palette: synth),
+    GlitchRecipe(name: "Grid Runner", dim: 0.96, layers: [.gridFloor, .scanlines], palette: synth),
     GlitchRecipe(name: "RGB Waves", dim: 0.78, layers: [.waves, .slices], palette: synth),
     GlitchRecipe(name: "Checker Panic", dim: 0.72, layers: [.checker, .bigText(["ALERT"])], palette: blood),
     GlitchRecipe(name: "Root Wall", dim: 0.88, layers: [.tiled("ROOT ACCESS"), .scanlines], palette: royal),
@@ -78,23 +79,23 @@ let glitchRecipes: [GlitchRecipe] = [
     GlitchRecipe(name: "Hex Dump", dim: 0.94, layers: [.hexWall, .rollingBar], palette: amber),
     GlitchRecipe(name: "Root Shell", dim: 0.94, layers: [.codeWall, .scanlines], palette: toxic),
     GlitchRecipe(name: "Data Stream", dim: 0.92, layers: [.dataStream, .scanlines], palette: ice),
-    GlitchRecipe(name: "Purple Haze", dim: 0.8, layers: [.waves, .tint, .staticNoise], palette: void),
+    GlitchRecipe(name: "Red Haze", dim: 0.8, layers: [.waves, .tint, .staticNoise], palette: void),
     GlitchRecipe(name: "Ghost Signal", dim: 0.78, layers: [.staticNoise, .tears, .bigText(["WE ARE INSIDE", "INSIDE"])], palette: ghost),
     GlitchRecipe(name: "Red Alert", dim: 0.82, layers: [.rollingBar, .checker, .bigText(["SELF DESTRUCT IN #", "BOOM IN #"])], palette: blood),
-    GlitchRecipe(name: "Sunset Melt", dim: 0.72, layers: [.melt, .waves], palette: sunset),
-    GlitchRecipe(name: "Neon Tunnel", dim: 0.92, layers: [.tunnel, .warp], palette: synth),
+    GlitchRecipe(name: "Firewall Melt", dim: 0.72, layers: [.melt, .waves], palette: sunset),
+    GlitchRecipe(name: "Breach Tunnel", dim: 0.92, layers: [.tunnel, .warp], palette: synth),
     GlitchRecipe(name: "Matrix Breach", dim: 0.88, layers: [.matrix(kana), .cracks, .bigText(["ACCESS GRANTED", "GRANTED"])], palette: toxic),
     GlitchRecipe(name: "Static Rain", dim: 0.85, layers: [.staticNoise, .matrix("01")], palette: ghost),
     GlitchRecipe(name: "Glitch Mosaic", dim: 0.72, layers: [.blocks, .checker], palette: royal),
     GlitchRecipe(name: "Broken Display", dim: 0.72, layers: [.tears, .colorBars, .slices, .cracks], palette: ghost),
     GlitchRecipe(name: "Radar Rain", dim: 0.92, layers: [.radar, .matrix("01")], palette: ice),
-    GlitchRecipe(name: "Synthwave Scope", dim: 0.96, layers: [.gridFloor, .scope], palette: synth),
+    GlitchRecipe(name: "Signal Intercept", dim: 0.96, layers: [.gridFloor, .scope], palette: synth),
     GlitchRecipe(name: "Access Denied", dim: 0.75, layers: [.tiled("ACCESS DENIED"), .popups], palette: blood),
     GlitchRecipe(name: "Infection", dim: 0.85, layers: [.virus, .codeWall], palette: hotPink),
     GlitchRecipe(name: "Deep Sort", dim: 0.75, layers: [.pixelSort, .rollingBar, .scanlines], palette: void),
     GlitchRecipe(name: "Ransomware", dim: 0.9, layers: [.tiled("PAY 5 BTC"), .dataStream, .bigText(["YOUR FILES ARE ENCRYPTED", "ENCRYPTED"])], palette: amber),
     GlitchRecipe(name: "Heartbeat Grid", dim: 0.94, layers: [.gridFloor, .heartbeat], palette: toxic),
-    GlitchRecipe(name: "Frozen", dim: 0.78, layers: [.checker, .tint, .cracks], palette: ice),
+    GlitchRecipe(name: "Lockdown", dim: 0.78, layers: [.checker, .tint, .cracks], palette: ice),
     GlitchRecipe(name: "Fatal Exception", dim: 1, layers: [.blueScreen, .tears], palette: blood),
     GlitchRecipe(name: "Signal Lost", dim: 0.75, layers: [.vhs, .staticNoise, .bigText(["SIGNAL LOST", "LOST"])], palette: amber),
     GlitchRecipe(name: "Laser Grid", dim: 0.94, layers: [.gridFloor, .radar], palette: blood),
@@ -102,9 +103,9 @@ let glitchRecipes: [GlitchRecipe] = [
     GlitchRecipe(name: "Total Chaos", dim: 0.72, layers: [.blocks, .slices, .tears, .popups, .cracks], palette: synth),
 ]
 
-/// The "starting in" screen before Mr. Robot. `n` is the seconds left.
+/// The "starting in" screen before Zero Day. `n` is the seconds left.
 func countdownRecipe(_ n: Int) -> GlitchRecipe {
-    GlitchRecipe(name: "Countdown", dim: 0.6, layers: [.scanlines, .tears, .bigText(["MR. ROBOT IN \(n)", "\(n)"])],
+    GlitchRecipe(name: "Countdown", dim: 0.6, layers: [.scanlines, .tears, .bigText(["ZERO DAY IN \(n)", "\(n)"])],
                  palette: toxic)
 }
 
@@ -156,8 +157,11 @@ func renderTakeover(_ recipe: GlitchRecipe, in r: CGRect, time t: CGFloat, seed:
         case .tiled(let word): tiled(r, t, pal, word, ctx)
         }
     }
+    // Flashes are alarm red, with now and then a white one.
     if pulse > 0.01 {
-        NSColor(white: 1, alpha: 0.35 * pulse).setFill()
+        let white = seed % 4 == 0
+        (white ? NSColor.white : NSColor(srgbRed: 1, green: 0, blue: 0.2, alpha: 1))
+            .withAlphaComponent(0.4 * pulse).setFill()
         r.fill()
     }
     ctx.restoreGState()
@@ -210,8 +214,8 @@ private func staticNoise(_ r: CGRect, _ pal: [NSColor], _ f: inout GlitchRandom)
 }
 
 private func colorBars(_ r: CGRect, _ f: inout GlitchRandom) {
-    let bars: [NSColor] = [NSColor(white: 0.8, alpha: 1), .systemYellow, .systemTeal, .systemGreen,
-                           .systemPink, .systemRed, .systemBlue]
+    let bars: [NSColor] = [NSColor(white: 0.85, alpha: 1), hex(0xFF0033), .black, hex(0x00FF41),
+                           hex(0xFFB000), hex(0x8B0000), .black]
     let band = CGRect(x: r.minX, y: r.midY - r.height * 0.18, width: r.width, height: r.height * 0.36)
     let w = band.width / CGFloat(bars.count)
     let shift = f.range(-20, 20)

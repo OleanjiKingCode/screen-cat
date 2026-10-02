@@ -139,10 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // quit. Nothing shows on screen and no app is switched.
         if CommandLine.arguments.contains("--idle-selftest") {
             idleTimer?.invalidate()
-            // `--idle-selftest mrrobot` runs Mr. Robot instead. Either way, at
+            // `--idle-selftest zeroday` runs Zero Day instead. Either way, at
             // 11s it acts as if you touched the trackpad, to test the exit.
-            let robot = CommandLine.arguments.contains("mrrobot")
-            beginIdleCrawl(grace: .greatestFiniteMagnitude, routine: robot ? .mrRobot : .idleCrawl)
+            let zeroDay = CommandLine.arguments.contains("zeroday")
+            beginIdleCrawl(grace: .greatestFiniteMagnitude, routine: zeroDay ? .zeroDay : .idleCrawl)
             window.alphaValue = 0
             (behavior as? IdleCrawlBehavior)?.requestNextApp = nil
             (behavior as? IdleCrawlBehavior)?.requestRandomApp = nil
@@ -260,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "Crawl until I touch something", action: #selector(runIdleCrawl), keyEquivalent: "")
         menu.addItem(.separator())
         let modes = NSMenu()
-        for (tag, title) in [(500, "Normal"), (501, "Crawler"), (502, "Mr. Robot (3 min hack, starts now)")] {
+        for (tag, title) in [(500, "Normal"), (501, "Crawler"), (502, "Zero Day (3 min hack, starts now)")] {
             let item = NSMenuItem(title: title, action: #selector(pickMode(_:)), keyEquivalent: "")
             item.tag = tag
             item.target = self
@@ -384,7 +384,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switchedApps = false
     }
 
-    /// Mr. Robot's hop: a random app one to three places left or right of the
+    /// Zero Day's hop: a random app one to three places left or right of the
     /// one in front, so it jumps around rather than stepping through in order.
     private func switchToRandomApp() -> Bool {
         let apps = switchableApps()
@@ -448,11 +448,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func pickMode(_ sender: NSMenuItem) {
-        // Mr. Robot is a show, not a lasting mode: it runs once and the saved
+        // Zero Day is a show, not a lasting mode: it runs once and the saved
         // mode stays what it was.
         if sender.tag == 502 {
-            ActivityLog.shared.cat("Mr. Robot started from the menu")
-            beginIdleCrawl(grace: 3.2, routine: .mrRobot)
+            ActivityLog.shared.cat("Zero Day started from the menu")
+            beginIdleCrawl(grace: 3.2, routine: .zeroDay)
             return
         }
         setMode(sender.tag == 501 ? "crawler" : "normal")
@@ -531,7 +531,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ActivityLog.shared.cat("glitch style: \(glitchRecipes[idle.recipeIndex].name)")
         }
         takeoverFrame += 1
-        guard takeoverFrame % 3 == 0 else { return }
+        // Zero Day moves fast, so it renders at 30 fps; the idle crawl at 20.
+        guard takeoverFrame % (idle.catless ? 2 : 3) == 0 else { return }
         if idle.countdownLeft > 0 {
             takeover.show(countdownRecipe(Int(ceil(idle.countdownLeft))), time: idle.countdownLeft, seed: 7,
                           pulse: 0, opacity: 1)
@@ -660,11 +661,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Begging and the play invite both face you and need a clickable
         // bubble the right way up, so they stay on the bottom edge.
         let mayUseWall = routine != .hungry && routine != .play && routine != .crawl
-            && routine != .idleCrawl && routine != .mrRobot
+            && routine != .idleCrawl && routine != .zeroDay
             && Double.random(in: 0..<1) < scene.config.wallChance
         let surface: Surface = mayUseWall ? (Bool.random() ? .left : .right) : .bottom
         scene.setStage(surface: surface, screen: screen.visibleFrame, catSize: scene.cat.size)
-        if routine == .idleCrawl || routine == .mrRobot { scene.crawlTargets = crawlTargets(on: screen) }
+        if routine == .idleCrawl || routine == .zeroDay { scene.crawlTargets = crawlTargets(on: screen) }
         if routine == .crawl {
             scene.crawlTargets = crawlTargets(on: screen)
             // Nothing to break on this screen: just take a walk.
@@ -681,7 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         forced = force
         scene.cat.wearing = pickOutfit(scene.config)
         // A hacker wears shades.
-        if [.crawl, .idleCrawl, .mrRobot].contains(routine) { scene.cat.wearing.insert(.glasses) }
+        if [.crawl, .idleCrawl, .zeroDay].contains(routine) { scene.cat.wearing.insert(.glasses) }
         if let idle = behavior as? IdleCrawlBehavior {
             idle.requestTargets = { [weak self] in
                 guard let self else { return [] }
@@ -746,7 +747,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lastTick = now
 
         // A touch or key: the glitch goes at once and the cat shrinks away.
-        // Mr. Robot ending on time takes the same exit.
+        // Zero Day ending on time takes the same exit.
         if let idle = behavior as? IdleCrawlBehavior {
             if !idle.isExiting, touchedSinceIdleCrawl() {
                 ActivityLog.shared.cat("idle crawl ended: you are back")
