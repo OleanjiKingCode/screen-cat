@@ -120,12 +120,15 @@ while a blocked app (video) is in front or fullscreen, and stops when the
 display sleeps. Only real hardware input counts. **Crawl until I touch
 something** starts one now. `idleCrawl: false` turns it off.
 
-**Mr. Robot.** **Mode > Mr. Robot (3 min hack, starts now)** runs the same
-takeover as a three-minute show: a three-second "MR. ROBOT IN 3" countdown (so
-the click that started it does not stop it), then the glitches at four times
-the speed, a new style every 15 seconds, and a faster cat that hops to the next
-app after one window. It ends after three minutes or at the first touch, with
-the same shrink-away exit. It does not change the saved mode.
+**Mr. Robot.** **Mode > Mr. Robot (3 min hack, starts now)** is a three-minute
+hacked-computer show with no cat at all. After a three-second "MR. ROBOT IN 3"
+countdown (so the click that started it does not stop it), the whole screen
+glitches at four times the speed, with bursts of flashes. Every 4 to 7 seconds
+it jumps to a random app one to three places left or right (the third app to
+the left, then the second to the right, and so on); macOS slides to it, the
+glitch dims for a moment so you glimpse the app, then a new style takes over.
+It ends after three minutes or at the first touch, with the glitch gone at once
+and you back in the app you started in. It does not change the saved mode.
 `--idle-selftest mrrobot` runs it invisibly.
 
 The glitch renders at half resolution, 20 frames a second, on its own layer
