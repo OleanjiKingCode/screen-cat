@@ -102,19 +102,27 @@ mode drives both, and it is saved as `mode` in the settings.
   others, are skipped. **Break some apps (crawler)** runs one now in any mode.
 
 **Idle crawl.** After `idleCrawlSeconds` (120) with no mouse, trackpad or
-keyboard input, in any mode, the cat starts a crawl that does not stop. It
-roams the whole screen, up, down and sideways (shrinking as it goes up and
-zig-zagging up steep climbs, never rising straight), stands on each window's
-bottom edge and breaks it in one of five styles (breach, falling code, crash
-screen, no signal, meltdown) and six colours. At the edge of the screen it
-brings the next app forward, so macOS slides to it like a three-finger swipe,
-and comes in from the other side. The first touch or key press ends it and
-takes you back to the app you left. It does not start while a blocked app
-(video) is in front or fullscreen, and stops when the display sleeps. Only real
-hardware input counts. **Crawl until I touch something** starts one now.
-After `growAfterSeconds` (120) of crawling it stops, grows to `growScale` (2x)
-its size in pulses inside a ring of light so you can watch it, and carries on
-big. `idleCrawl: false` turns it off. Every glitch style side by side:
+keyboard input, in **any** mode (normal included), the cat walks onto the
+screen, stops, and grows to `growScale` (2x) in pulses inside a ring of light.
+Then the **whole screen** (menu bar and Dock too) turns into a glitch, and
+stays that way. There are 50 full-screen styles (Digital Rain, Blue Screen of
+Meow, No Signal, Meltdown, Outrun, Radar Lock, Error Storm, Cat Virus, Hex
+Dump, Warp Speed and more), each in its own colours. One plays for
+`glitchStyleSeconds` (60), then the next takes over. The cat roams the screen
+on top, up, down and sideways (shrinking as it goes up, zig-zagging up steep
+climbs), stops at windows and zaps them, which flashes the screen. At the edge
+of the screen it brings the next app forward, so macOS slides to it like a
+three-finger swipe. The glitch drops for that moment, so you see the new screen
+normally while the cat walks in, then a new style takes over. The first touch
+or key press ends it and takes you back to the app you left. It does not start
+while a blocked app (video) is in front or fullscreen, and stops when the
+display sleeps. Only real hardware input counts. **Crawl until I touch
+something** starts one now. `idleCrawl: false` turns it off.
+
+The glitch renders at half resolution, 20 frames a second, on its own layer
+under the cat; the slowest style takes about 12 ms a frame. See every style:
+`--takeover out.png`; time them: `--takeover-bench`; run the crawl invisibly
+and log it: `--idle-selftest`. The short per-window glitches of crawler mode:
 `--glitches out.png`.
 
 **Open playground** opens a window with its own cat and five pretend apps
@@ -290,8 +298,8 @@ it, and those are never requested.
 | `crawlChance` | `0.7` | In crawler mode, the chance a visit is a crawl. |
 | `idleCrawl` | `true` | Start the nonstop crawl when you leave the Mac alone. |
 | `idleCrawlSeconds` | `120` | How long with no input before it starts. At least `15`. |
-| `growAfterSeconds` | `120` | Crawling time before the cat grows. |
-| `growScale` | `2` | How big it grows, `1` to `4`. |
+| `growScale` | `2` | How big the cat grows when the idle crawl starts, `1` to `4`. |
+| `glitchStyleSeconds` | `60` | How long each full-screen glitch style plays. At least `5`. |
 | `activityLog` | `true` | Keep the daily activity log in `~/Library/Logs/ScreenCat`. |
 | `activityLogDays` | `30` | Delete day files older than this. `0` keeps them forever. |
 | `opacity` | `1.0` | Overall transparency, `0.1` to `1.0`. |

@@ -1,40 +1,54 @@
 import AppKit
 
-/// The crawl that runs while you are away. It starts after a stretch with no
-/// mouse, trackpad or keyboard input and only ends when the app stops it,
-/// which it does on the first touch or key press.
+/// The crawl that runs while you are away, in any mode. It starts after a
+/// stretch with no mouse, trackpad or keyboard input and only ends when the
+/// app stops it, which it does on the first touch or key press.
+///
+/// The order is: the cat walks in on a normal screen, stops and grows to
+/// `growScale` while you watch, then the whole screen turns into a glitch. One
+/// style plays for `glitchStyleSeconds`, then the next takes over. The cat
+/// roams the screen on top of it, up, down and sideways, zapping windows. At
+/// the edge it brings the next app forward, which slides in like a
+/// three-finger swipe. The glitch drops for that moment, so the new screen is
+/// seen normally while the cat walks in, then a new style takes it over.
 ///
 /// The cat roams the whole screen here, not just its floor. Like "follow me",
 /// that is only allowed because two things stand in for the floor: it shrinks
 /// as it goes up, so up reads as further away, and it never moves steeper than
 /// `maxSlope`, zig-zagging up anything steeper instead of rising straight.
-///
-/// It walks to each window, stands on its bottom edge, zaps it and lets it
-/// break. With the windows done it heads for the side of the screen it is
-/// travelling toward. There it asks the app for the next app, which slides in
-/// like a three-finger swipe, and comes in from the other side. With no other
-/// app to go to, it turns round and starts again on the same screen.
 final class IdleCrawlBehavior: Behavior, BreachSource {
-    private enum Stage { case moving, zapping, watching, switching, growing }
-    private var stage: Stage = .moving
-    private var targets: [CGRect] = []
+    private enum Stage { case entering, growing, moving, zapping, resting, switching, arriving }
+    private var stage: Stage = .entering
+    /// For `--idle-selftest` and the log.
+    var stageName: String { "\(stage)" }
+    private struct Stop {
+        var point: CGPoint
+        /// The window to zap there, if it is a window and not just a waypoint.
+        var window: CGRect?
+    }
+    private var stops: [Stop] = []
     private var current = 0
     private var goal = CGPoint.zero
-    /// True while heading for the edge rather than a window.
+    /// True while heading for the edge rather than a stop.
     private var leaving = false
     private var direction: CGFloat = 1
     private var legDirection: CGFloat = 1
     private var timer: CGFloat = 0
+    private var growTime: CGFloat = 0
+    private var baseSize: CGFloat = 0
+    private let growDuration: CGFloat = 3
+
     private(set) var breaches: [Breach] = []
     private(set) var zap: Zap?
     private(set) var aura: Aura?
-    private var elapsed: CGFloat = 0
-    private var grown = false
-    private var growTime: CGFloat = 0
-    private var baseSize: CGFloat = 0
-    /// What the cat was doing when it stopped to grow, to pick up after.
-    private var stageBeforeGrowing: Stage = .moving
-    private let growDuration: CGFloat = 3
+
+    // The full-screen glitch.
+    private var takeoverOn = false
+    private(set) var takeoverOpacity: CGFloat = 0
+    private(set) var recipeIndex = Int.random(in: 0..<glitchRecipes.count)
+    private(set) var styleTime: CGFloat = 0
+    private(set) var styleSeed = UInt32.random(in: 1...UInt32.max)
+    private(set) var pulse: CGFloat = 0
 
     /// Fresh windows for the screen as it is now.
     var requestTargets: (() -> [CGRect])?
@@ -48,121 +62,144 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
         cat.pos = start
         cat.visible = true
         direction = start.x < scene.stage.midX ? 1 : -1
-        load(targets, scene)
+        walkIn(scene)
     }
 
-    /// Takes a new set of windows, in walking order. An empty desktop gets a
-    /// few patches of screen to break instead, so there is always something.
-    private func load(_ windows: [CGRect], _ scene: Scene) {
-        var list = windows
-        if list.isEmpty {
-            let s = scene.stage
-            list = (0..<3).map { _ in
-                let w = s.width * CGFloat.random(in: 0.2...0.35)
-                let h = s.height * CGFloat.random(in: 0.2...0.35)
-                return CGRect(x: CGFloat.random(in: s.minX...(s.maxX - w)),
-                              y: CGFloat.random(in: s.minY...(s.maxY - h)), width: w, height: h)
-            }
+    /// From off the side to a spot a quarter of the way in, on a normal screen.
+    private func walkIn(_ scene: Scene) {
+        let s = scene.stage
+        goal = CGPoint(x: direction > 0 ? s.minX + s.width * 0.25 : s.maxX - s.width * 0.25,
+                       y: min(scene.cat.pos.y, s.maxY - scene.cat.size * 1.3))
+        leaving = false
+    }
+
+    /// The next style, never the one just shown.
+    private func nextStyle() {
+        var next = Int.random(in: 0..<glitchRecipes.count)
+        if next == recipeIndex { next = (next + 1) % glitchRecipes.count }
+        recipeIndex = next
+        styleTime = 0
+        styleSeed = UInt32.random(in: 1...UInt32.max)
+        pulse = 1
+    }
+
+    /// Where to go on this screen: each window, plus a couple of open spots so
+    /// it wanders the whole screen, in walking order.
+    private func planStops(_ windows: [CGRect], _ scene: Scene) {
+        let s = scene.stage
+        let top = s.maxY - scene.cat.size * 1.3
+        var list: [Stop] = windows.map { w in
+            let inset = min(scene.cat.size, w.width / 3)
+            return Stop(point: CGPoint(x: CGFloat.random(in: (w.minX + inset)...(w.maxX - inset)),
+                                       y: min(max(w.minY, s.minY), top)), window: w)
         }
-        targets = list.sorted { direction > 0 ? $0.midX < $1.midX : $0.midX > $1.midX }
+        for _ in 0..<Int.random(in: 2...3) {
+            list.append(Stop(point: CGPoint(x: CGFloat.random(in: (s.minX + s.width * 0.1)...(s.maxX - s.width * 0.1)),
+                                            y: CGFloat.random(in: s.minY...max(s.minY, top))), window: nil))
+        }
+        stops = list.sorted { direction > 0 ? $0.point.x < $1.point.x : $0.point.x > $1.point.x }
         current = 0
         nextGoal(scene)
     }
 
     private func nextGoal(_ scene: Scene) {
-        let cat = scene.cat
         let s = scene.stage
-        let top = s.maxY - cat.size * 1.3
         stage = .moving
-        if current < targets.count {
-            // Stand on the window's bottom edge, somewhere along it.
-            let t = targets[current]
-            let inset = min(cat.size, t.width / 3)
-            goal = CGPoint(x: CGFloat.random(in: (t.minX + inset)...(t.maxX - inset)),
-                           y: min(max(t.minY, s.minY), top))
+        if current < stops.count {
+            goal = stops[current].point
             leaving = false
         } else {
-            goal = CGPoint(x: direction > 0 ? s.maxX - cat.size * 0.6 : s.minX + cat.size * 0.6,
-                           y: min(max(cat.pos.y + CGFloat.random(in: -0.2...0.2) * s.height, s.minY), top))
+            let top = s.maxY - scene.cat.size * 1.3
+            goal = CGPoint(x: direction > 0 ? s.maxX - scene.cat.size * 0.6 : s.minX + scene.cat.size * 0.6,
+                           y: min(max(scene.cat.pos.y + CGFloat.random(in: -0.2...0.2) * s.height, s.minY), top))
             leaving = true
         }
     }
 
     func update(_ dt: CGFloat, _ scene: Scene) -> Bool {
-        for i in breaches.indices { breaches[i].age += dt }
-        breaches.removeAll { $0.finished }
         zap?.age += dt
-        let cat = scene.cat
-        elapsed += dt
-
-        // After `growAfterSeconds` of crawling it powers up, once: it stops
-        // where it is and grows to `growScale` in front of you. Only between
-        // moves, so it never grows mid-zap or off screen.
-        if !grown, elapsed >= scene.config.growAfterSeconds, cat.visible,
-           stage == .moving || stage == .watching {
-            grown = true
-            growTime = 0
-            stageBeforeGrowing = stage
-            stage = .growing
-            zap = nil
-            cat.setClip(.standIdle)
+        pulse = max(0, pulse - dt * 1.5)
+        // Fades in over 1.2s, out over 0.4s so the next screen shows promptly.
+        takeoverOpacity = takeoverOn ? min(1, takeoverOpacity + dt / 1.2) : max(0, takeoverOpacity - dt / 0.4)
+        if takeoverOpacity > 0 {
+            styleTime += dt
+            if styleTime >= scene.config.glitchStyleSeconds { nextStyle() }
         }
+        let cat = scene.cat
 
         switch stage {
+        case .entering, .arriving:
+            if roam(toward: goal, scene, dt) {
+                if stage == .entering {
+                    stage = .growing
+                    growTime = 0
+                    cat.setClip(.standIdle)
+                } else {
+                    takeoverOn = true
+                    nextStyle()
+                    planStops(requestTargets?() ?? [], scene)
+                }
+            }
+
         case .growing:
             growTime += dt
             let t = min(1, growTime / growDuration)
             // Grows in pulses that settle, so the change is easy to watch.
-            let pulse = 1 + 0.08 * sin(t * .pi * 6) * (1 - t)
+            let wobble = 1 + 0.08 * sin(t * .pi * 6) * (1 - t)
             let eased = t * t * (3 - 2 * t)
-            cat.size = baseSize * (1 + (scene.config.growScale - 1) * eased) * pulse
-            // Keep the head on screen as it gets bigger.
+            cat.size = baseSize * (1 + (scene.config.growScale - 1) * eased) * wobble
             cat.pos.y = min(cat.pos.y, scene.stage.maxY - cat.size * 1.3)
             aura = Aura(center: CGPoint(x: cat.pos.x, y: cat.pos.y + cat.drawnSize * 0.45),
-                        size: cat.drawnSize, progress: t, age: growTime, accentIndex: Int(growTime * 2) % glitchAccents.count)
+                        size: cat.drawnSize, progress: t, age: growTime,
+                        accentIndex: Int(growTime * 2) % glitchAccents.count)
             if t >= 1 {
                 cat.size = baseSize * scene.config.growScale
                 aura = nil
-                stage = stageBeforeGrowing
+                takeoverOn = true
+                planStops(requestTargets?() ?? [], scene)
             }
 
         case .moving:
             guard roam(toward: goal, scene, dt) else { break }
             if leaving {
                 if requestNextApp?(direction) == true {
-                    // Off this side; the next app slides in. Wait for the
-                    // Space animation before looking at its windows.
+                    // Off this side. The glitch drops so the next app is seen
+                    // as it slides in; wait out the Space animation first.
                     cat.visible = false
+                    takeoverOn = false
                     timer = 1.4
                     stage = .switching
                 } else {
+                    // Nowhere to go: turn round, with a new style.
                     direction = -direction
-                    load(requestTargets?() ?? [], scene)
+                    nextStyle()
+                    planStops(requestTargets?() ?? [], scene)
                 }
-            } else {
-                let t = targets[current]
+            } else if let window = stops[current].window {
                 let head = CGPoint(x: cat.pos.x, y: cat.pos.y + cat.drawnSize * 0.75)
-                let to = CGPoint(x: min(max(head.x + CGFloat.random(in: -40...40), t.minX + 10), t.maxX - 10),
-                                 y: min(max(head.y + cat.drawnSize * 0.8, t.minY + 10), t.maxY - 10))
+                let to = CGPoint(x: min(max(head.x + CGFloat.random(in: -60...60), window.minX + 10), window.maxX - 10),
+                                 y: min(max(head.y + cat.drawnSize, window.minY + 10), window.maxY - 10))
                 zap = Zap(from: head, to: to, accentIndex: Int.random(in: 0..<glitchAccents.count))
                 cat.setClip(.crouch)
                 timer = 0.7
                 stage = .zapping
+            } else {
+                cat.setClip(Bool.random() ? .sitIdle : .standIdle)
+                timer = CGFloat.random(in: 0.6...1.4)
+                stage = .resting
             }
 
         case .zapping:
             timer -= dt
-            if timer <= 0, let z = zap {
-                var breach = Breach.random(rect: targets[current], touch: z.to)
-                breach.accentIndex = z.accentIndex
-                breaches.append(breach)
+            if timer <= 0 {
                 zap = nil
+                pulse = 1
                 cat.setClip(.sitIdle)
-                timer = CGFloat.random(in: 0.8...1.6)
-                stage = .watching
+                timer = 0.8
+                stage = .resting
             }
 
-        case .watching:
+        case .resting:
             timer -= dt
             if timer <= 0 {
                 current += 1
@@ -172,12 +209,14 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
         case .switching:
             timer -= dt
             if timer <= 0 {
-                // Come in from the side the screen slid in from.
+                // Come in from the side the screen slid in from, on a normal
+                // screen; the glitch comes back once it is in.
                 let s = scene.stage
                 cat.pos = CGPoint(x: direction > 0 ? s.minX - cat.size : s.maxX + cat.size,
                                   y: min(cat.pos.y, s.maxY - cat.size * 1.3))
                 cat.visible = true
-                load(requestTargets?() ?? [], scene)
+                walkIn(scene)
+                stage = .arriving
             }
         }
         // Never finishes by itself; any input ends it.

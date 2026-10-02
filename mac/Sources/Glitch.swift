@@ -123,7 +123,12 @@ struct GlitchRandom {
     private var state: UInt64
 
     init(_ seed: UInt32) {
-        state = UInt64(seed) &* 6364136223846793005 &+ 1442695040888963407
+        // SplitMix64 scramble, so neighbouring seeds (column 1, column 2, ...)
+        // start far apart instead of drawing near-identical first numbers.
+        var z = UInt64(seed) &+ 0x9E3779B97F4A7C15
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        state = z ^ (z >> 31)
     }
 
     mutating func unit() -> CGFloat {

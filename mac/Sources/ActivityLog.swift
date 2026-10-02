@@ -67,11 +67,15 @@ final class ActivityLog: NSObject, CBCentralManagerDelegate {
         // CoreBluetooth reports power changes as they happen, so nothing polls.
         // Creating the manager without the usage string in Info.plist kills the
         // process, so a bare binary run outside the .app skips Bluetooth.
-        if Bundle.main.object(forInfoDictionaryKey: "NSBluetoothAlwaysUsageDescription") != nil {
+        // Started from a terminal, macOS checks Bluetooth against the terminal,
+        // which has no usage string either, and kills this process. Only an
+        // app launched normally (parent is launchd) asks for itself.
+        if Bundle.main.object(forInfoDictionaryKey: "NSBluetoothAlwaysUsageDescription") != nil,
+           getppid() == 1 {
             bluetooth = CBCentralManager(delegate: self, queue: nil,
                                          options: [CBCentralManagerOptionShowPowerAlertKey: false])
         } else {
-            write("BLUETOOTH", "not checked (running outside ScreenCat.app)")
+            write("BLUETOOTH", "not checked (started from a terminal, not as an app)")
         }
 
         timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in

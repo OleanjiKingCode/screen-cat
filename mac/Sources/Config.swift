@@ -102,10 +102,11 @@ struct Config {
     /// keyboard input, whatever the mode. Any input stops it.
     var idleCrawl = true
     var idleCrawlSeconds: CGFloat = 120
-    /// After this long crawling, the cat grows to `growScale` times its size,
-    /// with a glow you can watch.
-    var growAfterSeconds: CGFloat = 120
+    /// How big the cat grows when the idle crawl starts, with a glow you can
+    /// watch, before the screen turns into a glitch.
     var growScale: CGFloat = 2
+    /// How long each full-screen glitch style plays before the next one.
+    var glitchStyleSeconds: CGFloat = 60
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary of apps, sleep, Bluetooth and what is running,
@@ -192,7 +193,7 @@ struct Config {
         c.crawlChance           = dbl("crawlChance")           ?? c.crawlChance
         c.idleCrawl             = bool("idleCrawl")            ?? c.idleCrawl
         c.idleCrawlSeconds      = num("idleCrawlSeconds")      ?? c.idleCrawlSeconds
-        c.growAfterSeconds      = num("growAfterSeconds")      ?? c.growAfterSeconds
+        c.glitchStyleSeconds    = num("glitchStyleSeconds")    ?? c.glitchStyleSeconds
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
         c.activityLogDays       = num("activityLogDays")       ?? c.activityLogDays
@@ -217,7 +218,7 @@ struct Config {
         c.petSeconds = max(0, c.petSeconds)
         c.crawlChance = max(0, min(1, c.crawlChance))
         c.idleCrawlSeconds = max(15, c.idleCrawlSeconds)
-        c.growAfterSeconds = max(0, c.growAfterSeconds)
+        c.glitchStyleSeconds = max(5, c.glitchStyleSeconds)
         c.growScale = max(1, min(4, c.growScale))
         c.chainChance = max(0, min(1, c.chainChance))
         c.glassesChance = max(0, min(1, c.glassesChance))
@@ -287,7 +288,7 @@ struct Config {
             "crawlChance": d.crawlChance,
             "idleCrawl": d.idleCrawl,
             "idleCrawlSeconds": d.idleCrawlSeconds,
-            "growAfterSeconds": d.growAfterSeconds,
+            "glitchStyleSeconds": d.glitchStyleSeconds,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,

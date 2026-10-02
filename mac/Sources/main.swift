@@ -3,6 +3,10 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var window: OverlayWindow!
     private var view: OverlayView!
+    /// The idle crawl's full-screen glitch, under the cat.
+    private var takeover: TakeoverView!
+    private var takeoverFrame = 0
+    private var shownRecipe = -1
     private var statusItem: NSStatusItem!
     private let scene = Scene()
 
@@ -89,7 +93,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             (self?.behavior as? PlayBehavior)?.accepted = true
         }
         loadSprites()
-        window.contentView = view
+        // The cat's view sits on top of the full-screen glitch. Both are
+        // layer-backed, so the cat redrawing at 60 fps never repaints the
+        // glitch, which only renders at 20.
+        let container = OverlayContainer(frame: CGRect(origin: .zero, size: union.size))
+        container.wantsLayer = true
+        container.autoresizingMask = [.width, .height]
+        takeover = TakeoverView(frame: .zero)
+        container.addSubview(takeover)
+        container.addSubview(view)
+        window.contentView = container
         applyConfig()
 
         buildStatusItem()
@@ -117,6 +130,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.checkIdleCrawl()
+        }
+
+        // `--idle-selftest`: run the idle crawl through the real window with
+        // the window fully transparent, log what it does each second, and
+        // quit. Nothing shows on screen and no app is switched.
+        if CommandLine.arguments.contains("--idle-selftest") {
+            idleTimer?.invalidate()
+            beginIdleCrawl(grace: .greatestFiniteMagnitude)
+            window.alphaValue = 0
+            (behavior as? IdleCrawlBehavior)?.requestNextApp = nil
+            var seconds = 0
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                guard let self, let idle = self.behavior as? IdleCrawlBehavior else { exit(1) }
+                seconds += 1
+                print(String(format: "%2ds  stage %@  cat %.0fpt at %.0f,%.0f  glitch %.2f  style %@  layer %@  image %@",
+                             seconds, idle.stageName, self.scene.cat.size, self.scene.cat.pos.x, self.scene.cat.pos.y,
+                             idle.takeoverOpacity, glitchRecipes[idle.recipeIndex].name,
+                             NSStringFromRect(self.takeover.frame),
+                             self.takeover.layer?.contents == nil ? "none" : "yes"))
+                if seconds >= 14 { exit(0) }
+            }
+            return
         }
 
         if let i = CommandLine.arguments.firstIndex(of: "--selftest"), i + 1 < CommandLine.arguments.count {
@@ -437,6 +472,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ note: Notification) { ActivityLog.shared.stop() }
 
+    /// Puts the idle crawl's glitch over the whole of the cat's screen, menu
+    /// bar and Dock included, and renders it every third frame.
+    private func showTakeover(_ idle: IdleCrawlBehavior) {
+        guard let screen = currentScreen else { return }
+        let rect = screen.frame.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
+        if takeover.frame != rect { takeover.frame = rect }
+        if idle.recipeIndex != shownRecipe, idle.takeoverOpacity > 0 {
+            shownRecipe = idle.recipeIndex
+            ActivityLog.shared.cat("glitch style: \(glitchRecipes[idle.recipeIndex].name)")
+        }
+        takeoverFrame += 1
+        guard takeoverFrame % 3 == 0 else { return }
+        if idle.takeoverOpacity <= 0.01 {
+            takeover.clear()
+            return
+        }
+        takeover.show(glitchRecipes[idle.recipeIndex], time: idle.styleTime, seed: idle.styleSeed,
+                      pulse: idle.pulse, opacity: idle.takeoverOpacity)
+    }
+
     /// Windows on `screen` worth breaking, in surface-local coordinates: the
     /// ones you can mostly see, from apps that are not on the blocked list, up
     /// to four of them. Window frames need no permission; titles are not read.
@@ -616,6 +671,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view?.breaches = []
         view?.zap = nil
         view?.aura = nil
+        takeover?.clear()
+        shownRecipe = -1
         petDwell = 0
         petLeft = 0
         petArmed = true
@@ -681,6 +738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for breach in view.breaches { dirty = dirty.union(breach.rect.insetBy(dx: -6, dy: -6)) }
         if let zap = view.zap { dirty = dirty.union(zap.bounds) }
         if let aura = view.aura { dirty = dirty.union(aura.bounds) }
+        if let idle = behavior as? IdleCrawlBehavior { showTakeover(idle) }
         if scene.ball.visible { dirty = dirty.union(scene.ball.bounds) }
         if let tip = view.bubbleTip {
             // The bubble is much taller than the cat, so it needs its own patch.
@@ -759,6 +817,20 @@ func pickOutfit(_ c: Config) -> Set<Accessory> {
     return outfit
 }
 
+/// Holds the glitch view and the cat's view. Only the cat's OK button ever
+/// takes a click; everything else falls through to the apps underneath.
+final class OverlayContainer: NSView {
+    override var isOpaque: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // `point` is in the superview's space; subviews want it in ours.
+        let local = convert(point, from: superview)
+        for sub in subviews.reversed() {
+            if let hit = sub.hitTest(local) { return hit }
+        }
+        return nil
+    }
+}
+
 // MARK: - Entry point
 
 // `--preview <path.png>` renders a contact sheet of every pose. Handy for
@@ -768,6 +840,14 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--preview" {
     exit(0)
 }
 
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--takeover" {
+    renderTakeoverSheet(to: CommandLine.arguments[2])
+    exit(0)
+}
+if CommandLine.arguments.contains("--takeover-bench") {
+    benchTakeover()
+    exit(0)
+}
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--glitches" {
     renderGlitchSheet(to: CommandLine.arguments[2])
     exit(0)

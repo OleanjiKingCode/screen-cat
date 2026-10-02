@@ -5,12 +5,7 @@ import AppKit
 /// draw path and the same global-screen-to-view mapping the live app uses, so it
 /// catches coordinate and behaviour bugs without needing a screen recording.
 func runSimulation(routine: Routine, to path: String) {
-    var cfg = Config.load()
-    // `--grow-after <seconds>` brings the idle crawl's growth into range.
-    if let i = CommandLine.arguments.firstIndex(of: "--grow-after"), i + 1 < CommandLine.arguments.count,
-       let seconds = Double(CommandLine.arguments[i + 1]) {
-        cfg.growAfterSeconds = CGFloat(seconds)
-    }
+    let cfg = Config.load()
     let stage = CGRect(x: 0, y: 0, width: 1512, height: 982)
 
     let surface: Surface = {
