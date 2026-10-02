@@ -1,0 +1,56 @@
+name: windows
+
+on:
+  push:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows/ScreenCat
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Publish single exe
+        run: dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+
+      # The self-test runs every routine and renders every glitch style with
+      # nobody at the screen, and writes pictures of them.
+      - name: Self-test
+        run: |
+          $p = Start-Process -FilePath publish\ScreenCat.exe -ArgumentList '--selftest', 'selftest' -Wait -PassThru
+          if (Test-Path selftest\report.txt) { Get-Content selftest\report.txt } else { Write-Host "no report written" }
+          exit $p.ExitCode
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenCat-win-x64
+          path: |
+            windows/ScreenCat/publish/ScreenCat.exe
+            windows/ScreenCat/publish/Assets/CREDIT.txt
+
+      - name: Upload self-test pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenCat-selftest
+          path: windows/ScreenCat/selftest
+          if-no-files-found: ignore
