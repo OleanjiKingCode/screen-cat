@@ -174,7 +174,7 @@ public sealed unsafe class OverlayWindow : NativeWindow, IDisposable
 
     public void Show(bool topmost)
     {
-        Native.SetWindowPos(Handle, topmost ? Native.HWND_TOPMOST : Native.HWND_TOP, Bounds.X0, Bounds.Y0,
+        Native.SetWindowPos(Handle, topmost ? Native.HWND_TOPMOST : Native.HWND_NOTOPMOST, Bounds.X0, Bounds.Y0,
             Bounds.Width, Bounds.Height, Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
         shown = true;
     }

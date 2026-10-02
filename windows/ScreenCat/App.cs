@@ -739,7 +739,11 @@ public sealed class App : IDisposable
         scene.Config = Config.Load();
         ApplyConfig();
         LoadSprites();
-        if (sheet == null) return;
+        if (sheet == null)
+        {
+            ScheduleNext();
+            return;
+        }
 
         currentScreen = screen;
         scene.Ui = ScaleOf(screen);

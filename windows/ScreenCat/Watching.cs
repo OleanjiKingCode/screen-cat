@@ -145,6 +145,7 @@ public static class Watching
             if (ShellClasses.Contains(ClassName(hwnd))) return true;
             Native.GetWindowThreadProcessId(hwnd, out uint pid);
             if (pid == MyPid || pid == 0) return true;
+            pid = HostedPid(hwnd, pid);
             var rect = FrameOf(hwnd);
             if (rect.Width < 2 || rect.Height < 2) return true;
             list.Add(new WindowInfo(hwnd, pid, rect));
@@ -153,13 +154,19 @@ public static class Watching
         return list;
     }
 
-    /// The process of the window in front. A Store app is hosted by
-    /// ApplicationFrameHost, so the real app is found among its children.
+    /// The process of the window in front.
     public static uint ForegroundPid()
     {
         var hwnd = Native.GetForegroundWindow();
         if (hwnd == IntPtr.Zero) return 0;
         Native.GetWindowThreadProcessId(hwnd, out uint pid);
+        return HostedPid(hwnd, pid);
+    }
+
+    /// A Store app's window belongs to ApplicationFrameHost, so the real app
+    /// is found among the window's children.
+    private static uint HostedPid(IntPtr hwnd, uint pid)
+    {
         if (!ProcessName(pid).Equals("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase)) return pid;
         uint real = pid;
         Native.EnumChildWindows(hwnd, (child, _) =>

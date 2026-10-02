@@ -231,7 +231,10 @@ public sealed class ActivityLog
         }
     }
 
-    public void DisplayPower(bool on) => Write("DISPLAY", on ? "screen turned on" : "screen turned off");
+    public void DisplayPower(bool on)
+    {
+        if (started) Write("DISPLAY", on ? "screen turned on" : "screen turned off");
+    }
 
     /// No keyboard or mouse input for five minutes counts as idle.
     private void CheckIdle()
