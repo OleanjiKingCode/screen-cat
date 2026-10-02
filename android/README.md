@@ -24,7 +24,7 @@ touches `android/` and uploads it as the `screen-cat-debug-apk` artifact.
 1. Open **Screen Cat** and tap **Allow display over other apps**. Find Screen
    Cat in the list and switch it on. Without this the cat cannot come out.
 2. Allow notifications when asked (Android 13 and later). The cat runs as a
-   foreground service, and its notification holds the **Mr. Robot**,
+   foreground service, and its notification holds the **Zero Day**,
    **Pause** and **Stop** buttons.
 3. Tap **Start**. The first visit comes after `firstAppearanceDelay` (20 s).
 4. Some phones (Xiaomi, Samsung, Huawei and others) kill background services.
@@ -54,18 +54,22 @@ touches `android/` and uploads it as the `screen-cat-debug-apk` artifact.
   no touch, the cat walks in, grows to `growScale` (2x) inside pulsing rings,
   then the whole screen becomes a glitch that stays on. All **50** styles are
   ported with the same names, layers and palettes, rendered at half
-  resolution about 20 times a second and scaled up with nearest neighbour. A
-  new style every `glitchStyleSeconds` (60). The cat roams up, down and
+  resolution about 20 times a second and scaled up with nearest neighbour.
+  Danger colours only: blood red, terminal green, warning amber and white on
+  black, with alarm-red flashes (now and then a white one). The glitch clock
+  runs at `glitchSpeed` (2, from 0.25 to 16), so with `glitchStyleSeconds`
+  (60) a new style comes every 30 s. On each screen the cat visits at most two
+  areas and one open spot before heading for the edge. The cat roams up, down and
   sideways on top (shrinking as it goes up, zig-zagging at `maxSlope` up
   anything steeper) and zaps, which flashes the screen. Any touch ends it:
   the glitch clears at once and the cat shrinks to nothing over 0.8 s. Normal
   visits carry on after that. It also stops when the screen goes off.
-- **Mr. Robot.** From the app or the notification: a three-minute
+- **Zero Day.** From the app or the notification: a three-minute
   hacked-phone show with no cat at all. After a three-second
-  "MR. ROBOT IN 3" countdown, the whole screen glitches at four times the
-  speed (fading in over 0.3 s), with random bursts of flashes. Every 4 to 7 s
-  it "hops": the glitch dims to a quarter for 1.3 s, then a new style takes
-  over. It ends after three minutes or at the first touch, with the glitch
+  "ZERO DAY IN 3" countdown, the whole screen glitches at `zeroDaySpeed`
+  (8, from 1 to 16), fading in over 0.3 s and rendering about 30 times a
+  second, with random bursts of flashes. Every 1.5 to 3 s it "hops": the
+  glitch dims to a quarter for 0.8 s, then a new style takes over. It ends after three minutes or at the first touch, with the glitch
   gone at once. It does not change the saved mode.
 - **Hacker text, no cat theme in the glitches.** The same recipe names and
   strings as the Mac: Kernel Panic, Root Wall, Worm Outbreak, Fatal
@@ -77,7 +81,8 @@ touches `android/` and uploads it as the `screen-cat-debug-apk` artifact.
   no signal, meltdown) before "REBOOTING...".
 - **Settings.** `screencat.json` in the app's files folder, with the same keys
   as the Mac's `~/.screencat.json`. The settings screen edits start/stop, the
-  mode, `idleCrawlSeconds`, `glitchStyleSeconds`, `growScale`, the outfit
+  mode, `idleCrawlSeconds`, `glitchStyleSeconds`, `growScale`,
+  `glitchSpeed`, `zeroDaySpeed`, the outfit
   chances and the colours; the raw JSON is editable at the bottom for every
   other key. A Mac file pasted in works as is.
 
@@ -99,9 +104,9 @@ touches `android/` and uploads it as the `screen-cat-debug-apk` artifact.
   window positions. Crawler mode and the takeover zap made-up, app-sized areas
   of the screen instead.
 - **No switching apps.** The Mac takeover brings the next app forward at the
-  screen edge, and Mr. Robot jumps to a random app on every hop. An app
+  screen edge, and Zero Day jumps to a random app on every hop. An app
   cannot do that on Android without an accessibility service, so at the edge
-  the cat turns round and a new style takes over, and a Mr. Robot hop is the
+  the cat turns round and a new style takes over, and a Zero Day hop is the
   dim and the new style alone, over whatever app you were in.
 - **Idle means no touch.** A 1x1 overlay window with
   `FLAG_WATCH_OUTSIDE_TOUCH` gets every tap elsewhere as `ACTION_OUTSIDE`;
