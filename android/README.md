@@ -60,11 +60,17 @@ touches `android/` and uploads it as the `screen-cat-debug-apk` artifact.
   anything steeper) and zaps, which flashes the screen. Any touch ends it:
   the glitch clears at once and the cat shrinks to nothing over 0.8 s. Normal
   visits carry on after that. It also stops when the screen goes off.
-- **Mr. Robot.** From the app or the notification: a three-second
-  "MR. ROBOT IN 3" countdown, then the takeover at four times the speed (a
-  new style every 15 s, the cat twice as fast), ending after three minutes or
-  at the first touch, with the same shrink-away exit. It does not change the
-  saved mode.
+- **Mr. Robot.** From the app or the notification: a three-minute
+  hacked-phone show with no cat at all. After a three-second
+  "MR. ROBOT IN 3" countdown, the whole screen glitches at four times the
+  speed (fading in over 0.3 s), with random bursts of flashes. Every 4 to 7 s
+  it "hops": the glitch dims to a quarter for 1.3 s, then a new style takes
+  over. It ends after three minutes or at the first touch, with the glitch
+  gone at once. It does not change the saved mode.
+- **Hacker text, no cat theme in the glitches.** The same recipe names and
+  strings as the Mac: Kernel Panic, Root Wall, Worm Outbreak, Fatal
+  Exception, Ransomware, Access Denied, the crash screen, popups, progress
+  bars and both scrolling code lists.
 - **Crawler mode.** Most visits (`crawlChance`) become a crawl: the cat puts
   its shades on, walks under a few areas of the screen, zaps each one, and it
   "breaks" in one of the five per-area styles (breach, matrix, blue screen,
@@ -93,8 +99,10 @@ touches `android/` and uploads it as the `screen-cat-debug-apk` artifact.
   window positions. Crawler mode and the takeover zap made-up, app-sized areas
   of the screen instead.
 - **No switching apps.** The Mac takeover brings the next app forward at the
-  screen edge. An app cannot do that on Android without an accessibility
-  service, so at the edge the cat turns round and a new style takes over.
+  screen edge, and Mr. Robot jumps to a random app on every hop. An app
+  cannot do that on Android without an accessibility service, so at the edge
+  the cat turns round and a new style takes over, and a Mr. Robot hop is the
+  dim and the new style alone, over whatever app you were in.
 - **Idle means no touch.** A 1x1 overlay window with
   `FLAG_WATCH_OUTSIDE_TOUCH` gets every tap elsewhere as `ACTION_OUTSIDE`;
   that is the "last input" clock. Hardware keys and the volume rocker do not
