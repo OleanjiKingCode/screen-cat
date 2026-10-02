@@ -17,7 +17,11 @@ import AppKit
 /// as it goes up, so up reads as further away, and it never moves steeper than
 /// `maxSlope`, zig-zagging up anything steeper instead of rising straight.
 final class IdleCrawlBehavior: Behavior, BreachSource {
-    private enum Stage { case countdown, entering, growing, moving, zapping, resting, switching, arriving, exiting }
+    private enum Stage {
+        case countdown, entering, growing, moving, zapping, resting, switching, arriving, exiting
+        // Mr. Robot only: glitch on, then hop to a random app.
+        case hacking, hopping
+    }
     private var stage: Stage = .entering
     /// For `--idle-selftest` and the log.
     var stageName: String { "\(stage)" }
@@ -44,6 +48,12 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     let speed: CGFloat
     /// Ends by itself after this many seconds (Mr. Robot's three minutes).
     let maxDuration: CGFloat?
+    /// Mr. Robot: no cat at all. The screen glitches and jumps between apps
+    /// in random order, with bursts of flashes and a new style on every hop.
+    let catless: Bool
+    private var burstTimer: CGFloat = 0
+    /// Jump to a random app, a few places left or right. True if it did.
+    var requestRandomApp: (() -> Bool)?
     private var elapsed: CGFloat = 0
     /// Seconds left on the "starting in" countdown, so the click that started
     /// it is over before any touch can end it.
@@ -70,9 +80,10 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     var requestNextApp: ((CGFloat) -> Bool)?
 
     init(scene: Scene, targets: [CGRect], speed: CGFloat = 1, maxDuration: CGFloat? = nil,
-         countdown: CGFloat = 0) {
+         countdown: CGFloat = 0, catless: Bool = false) {
         self.speed = speed
         self.maxDuration = maxDuration
+        self.catless = catless
         let cat = scene.cat
         baseSize = cat.size
         let start = entryPoint(scene, size: cat.size)
@@ -158,8 +169,14 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     func update(_ dt: CGFloat, _ scene: Scene) -> Bool {
         zap?.age += dt
         pulse = max(0, pulse - dt * 1.5)
-        // Fades in over 1.2s, out over 0.4s so the next screen shows promptly.
-        takeoverOpacity = takeoverOn ? min(1, takeoverOpacity + dt / 1.2) : max(0, takeoverOpacity - dt / 0.4)
+        // Fades in over 1.2s (0.3s for Mr. Robot), out over 0.4s so the next
+        // screen shows promptly. While Mr. Robot hops it only dims, so the
+        // new app is glimpsed through the glitch.
+        let level: CGFloat = takeoverOn ? (stage == .hopping ? 0.25 : 1) : 0
+        let rise: CGFloat = catless ? 0.3 : 1.2
+        takeoverOpacity = takeoverOpacity < level
+            ? min(level, takeoverOpacity + dt / rise)
+            : max(level, takeoverOpacity - dt / 0.4)
         if takeoverOpacity > 0 {
             styleTime += dt * speed
             if styleTime >= scene.config.glitchStyleSeconds { nextStyle() }
@@ -169,17 +186,51 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
         elapsed += dt
         if let maxDuration, elapsed >= maxDuration, stage != .exiting { beginExit() }
 
+        if catless { cat.visible = false }
+
         switch stage {
         case .countdown:
             countdownLeft -= dt
             if countdownLeft <= 0 {
                 countdownLeft = 0
-                cat.visible = true
-                stage = .entering
+                if catless {
+                    takeoverOn = true
+                    nextStyle()
+                    timer = CGFloat.random(in: 4...7)
+                    stage = .hacking
+                } else {
+                    cat.visible = true
+                    stage = .entering
+                }
+            }
+
+        case .hacking:
+            timer -= dt
+            burstTimer -= dt
+            if burstTimer <= 0 {
+                pulse = CGFloat.random(in: 0.5...1)
+                burstTimer = CGFloat.random(in: 0.5...1.5)
+            }
+            if timer <= 0 {
+                if requestRandomApp?() == true {
+                    timer = 1.3
+                    stage = .hopping
+                } else {
+                    nextStyle()
+                    timer = CGFloat.random(in: 4...7)
+                }
+            }
+
+        case .hopping:
+            timer -= dt
+            if timer <= 0 {
+                nextStyle()
+                timer = CGFloat.random(in: 4...7)
+                stage = .hacking
             }
 
         case .exiting:
-            guard cat.visible else { return true }
+            guard cat.visible, !catless else { return true }
             exitTime += dt
             let t = min(1, exitTime / 0.8)
             // Shrinks slowly, then fast, and is gone.

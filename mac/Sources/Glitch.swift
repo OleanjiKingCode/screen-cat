@@ -141,36 +141,36 @@ struct GlitchRandom {
 
 /// Fictional, harmless "hacker" lines for the scrolling code.
 private let fakeCode = [
-    "> connecting to cat-net node 7 ...",
-    "$ sudo purr --force --no-mercy",
-    "inject --payload whiskers.bin",
-    "bypass firewall :: port 443 OPEN",
+    "> connecting to 185.220.101.47:22 ...",
+    "$ nmap -sS -p- 10.0.0.0/24 --open",
+    "PORT     STATE SERVICE",
+    "22/tcp   open  ssh",
+    "443/tcp  open  https",
+    "$ ssh -i id_rsa root@10.0.0.14",
+    "Permission denied (publickey).",
+    "$ hydra -l admin -P rockyou.txt ssh://10.0.0.14",
+    "[22][ssh] login: admin  password: ********",
+    "bypassing firewall ... rule 0x1F dropped",
     "decrypt(0x3F2A9C) -> ok",
-    "while (true) { claw(memory); }",
-    "sector 0x7FF2 corrupted",
-    "rm -rf /system/naps/*",
-    "kernel.panic(\"too many cats\")",
-    "ssh root@app --whiskers",
-    "override AUTH_TOKEN=meow",
-    "hooking event loop ...",
-    "patching memory @ 0x0C47",
-    "exfiltrating yarn.db (2.3 MB)",
-    "access level: ROOT",
-    "for (i = 0; i < 9; i++) lives[i].backup()",
-    "segfault in app.render()",
-    "def pounce(target): return chaos",
-    "chmod 777 /dev/catnip",
-    "rewriting pixels ...",
-    "ERROR 0xDEAD: app not responding",
-    "trace: paw -> cursor -> window",
-    "SYN  SYN  SYN  ACK",
-    "compiling mischief.c ... done",
-    "mount /dev/fishtank /mnt/snacks",
-    "GET /api/v1/treats  200 OK",
-    "deleting monday.exe ...",
-    "fork() x 9 lives",
+    "dumping /etc/shadow ...",
+    "root:$6$Zx9Q...:19622:0:99999:7:::",
+    "privilege escalation: CVE-20XX-0000 ... ok",
+    "uid=0(root) gid=0(root)",
+    "$ curl -s http://10.0.0.14/admin.php?id=1' OR '1'='1",
+    "injecting payload stage2.bin (48 KB)",
+    "spawning reverse shell -> 185.220.101.47:4444",
+    "keylogger attached to pid 4127",
+    "exfiltrating /Users/*/Documents (2.3 GB)",
+    "wiping logs: /var/log/*.log",
+    "kernel: segfault at 0x00007ffd in libsystem",
+    "ERROR 0xDEAD: process not responding",
+    "rerouting traffic through 7 proxies",
+    "hash cracked: 5f4dcc3b5aa765d61d8327deb882cf99",
+    "AES-256 key found: 9b2e...c41f",
+    "mounting /dev/disk2s1 /mnt/target",
+    "GET /api/v1/users  200 OK",
     "0101 1100 0011 1010 1110",
-    "uploading hairball.zip",
+    "establishing persistence: launchd.plist",
 ]
 
 /// Paints a breach in its style. Every style fades in, darkens the window,
@@ -364,7 +364,7 @@ private func drawBlueScreen(_ b: Breach, in r: CGRect, ctx: CGContext) {
     NSColor(srgbRed: 0.08, green: 0.33, blue: 0.82, alpha: 1).setFill()
     r.fill()
     let percent = min(100, Int(max(0, b.age - 0.4) / 2.6 * 100))
-    let lines = ["CAT.EXE HAS STOPPED", "STOP CODE: HAIRBALL", "COLLECTING CATNIP \(percent)%"]
+    let lines = ["SYSTEM HALTED", "STOP CODE: 0XC000021A", "DUMPING MEMORY \(percent)%"]
     let widest = CGFloat(lines.map { PixelFont.width(of: $0) }.max() ?? 1)
     let pixel = max(2, min(6, floor(r.width * 0.8 / widest)))
     let left = r.minX + max(12, r.width * 0.08)

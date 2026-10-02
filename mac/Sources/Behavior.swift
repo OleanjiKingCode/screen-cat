@@ -698,7 +698,7 @@ func makeBehavior(_ routine: Routine, scene: Scene) -> Behavior {
 
     case .mrRobot:
         return IdleCrawlBehavior(scene: scene, targets: scene.crawlTargets, speed: 4,
-                                 maxDuration: 180, countdown: 3)
+                                 maxDuration: 180, countdown: 3, catless: true)
 
     case .stroll:
         let start = entryPoint(scene, size: size)

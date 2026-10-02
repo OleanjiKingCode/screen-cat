@@ -145,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             beginIdleCrawl(grace: .greatestFiniteMagnitude, routine: robot ? .mrRobot : .idleCrawl)
             window.alphaValue = 0
             (behavior as? IdleCrawlBehavior)?.requestNextApp = nil
+            (behavior as? IdleCrawlBehavior)?.requestRandomApp = nil
             var seconds = 0
             Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
                 guard let self else { exit(1) }
@@ -383,20 +384,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switchedApps = false
     }
 
-    /// The three-finger swipe. Brings the next app forward, in name order in
-    /// the cat's direction, and macOS slides to its Space if it has one.
-    /// Skips blocked apps and apps with no window anywhere.
-    private func switchToNextApp(_ direction: CGFloat) -> Bool {
+    /// Mr. Robot's hop: a random app one to three places left or right of the
+    /// one in front, so it jumps around rather than stepping through in order.
+    private func switchToRandomApp() -> Bool {
+        let apps = switchableApps()
+        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard apps.count >= 2 else { return false }
+        let i = apps.firstIndex { $0.processIdentifier == front } ?? 0
+        let side = Bool.random() ? 1 : -1
+        let places = Int.random(in: 1...min(3, apps.count - 1))
+        let next = apps[((i + side * places) % apps.count + apps.count) % apps.count]
+        guard next.processIdentifier != front, let url = next.bundleURL else { return false }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: config)
+        switchedApps = true
+        ActivityLog.shared.cat("hopped to \(next.localizedName ?? "an app") (\(places) to the \(side > 0 ? "right" : "left"))")
+        return true
+    }
+
+    /// Apps the crawl may bring forward: ordinary apps with a real window on
+    /// some Space, not hidden, not blocked, not Screen Cat, in name order.
+    private func switchableApps() -> [NSRunningApplication] {
         let me = ProcessInfo.processInfo.processIdentifier
         let blocked = Watching.blockedPids(scene.config.blockedApps)
         let withWindows = Watching.pidsWithWindows()
-        let apps = NSWorkspace.shared.runningApplications
+        return NSWorkspace.shared.runningApplications
             .filter { app in
                 app.activationPolicy == .regular && !app.isHidden && app.bundleURL != nil
                     && app.processIdentifier != me && !blocked.contains(app.processIdentifier)
                     && withWindows.contains(app.processIdentifier)
             }
             .sorted { ($0.localizedName ?? "").localizedCaseInsensitiveCompare($1.localizedName ?? "") == .orderedAscending }
+    }
+
+    /// The three-finger swipe. Brings the next app forward, in name order in
+    /// the cat's direction, and macOS slides to its Space if it has one.
+    /// Skips blocked apps and apps with no window anywhere.
+    private func switchToNextApp(_ direction: CGFloat) -> Bool {
+        let apps = switchableApps()
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let others = apps.filter { $0.processIdentifier != front }
         guard !others.isEmpty, let url = pickNext(apps, front: front, direction: direction)?.bundleURL else {
@@ -662,6 +688,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return self.crawlTargets(on: self.currentScreen ?? targetScreen())
             }
             idle.requestNextApp = { [weak self] direction in self?.switchToNextApp(direction) ?? false }
+            idle.requestRandomApp = { [weak self] in self?.switchToRandomApp() ?? false }
         }
         scene.cat.visible = true
         let outfit = scene.cat.wearing.map { "\($0)" }.sorted().joined(separator: " + ")
