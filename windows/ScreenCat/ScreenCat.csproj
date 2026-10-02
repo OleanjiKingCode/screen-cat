@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- The 10.0.19041 target brings in the WinRT projection, used only to read the Bluetooth radio state. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>$(NoWarn);WFAC010;CA1416</NoWarn>
+    <RootNamespace>ScreenCat</RootNamespace>
+    <AssemblyName>ScreenCat</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Version>1.0.0</Version>
+    <Product>Screen Cat</Product>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Cat_Sprite_Sheet.png" LogicalName="Cat_Sprite_Sheet.png" />
+    <EmbeddedResource Include="Assets\Cat_Shadow.png" LogicalName="Cat_Shadow.png" />
+    <EmbeddedResource Include="Assets\Cat_Ball.png" LogicalName="Cat_Ball.png" />
+    <None Include="Assets\CREDIT.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

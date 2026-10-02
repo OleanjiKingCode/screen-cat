@@ -1,0 +1,16 @@
+Cat sprites: "Cat Pack" (free tier) by Glem / octopusINKUS
+https://octopusinkus.itch.io/cat-pack
+
+Cat_Sprite_Sheet.png and Cat_Shadow.png are the pack's original files, unmodified
+on disk. Screen Cat recolours the sheet in memory at load time; the files
+themselves are untouched.
+
+Cat_Ball.png is the yarn ball, cropped out of the pack's play animation so the
+ball can roll around on its own.
+
+The pack states no licence. It is a name-your-own-price download and is used
+here in a personal, non-redistributed desktop toy. If you keep using it, pay the
+author and credit them.
+
+This copy is embedded into the Windows exe. Because the pack has no licence,
+the repository and any built exe must stay private and must not be shared.
