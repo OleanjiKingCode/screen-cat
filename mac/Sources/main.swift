@@ -170,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             runSelfTest(to: CommandLine.arguments[i + 1])
             return
         }
+        applySteppedOut()
         schedule(after: demo ? 2 : scene.config.firstAppearanceDelay)
     }
 
@@ -205,6 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func reloadConfig() {
         scene.config = Config.load()
         applyConfig()
+        applySteppedOut()
         loadSprites()
         view.needsDisplay = true
     }
@@ -275,6 +277,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
         pauseItem.tag = 100
         menu.addItem(pauseItem)
+        let stepped = NSMenuItem(title: "Stepped out (Mac never sleeps)",
+                                 action: #selector(toggleSteppedOut), keyEquivalent: "")
+        stepped.tag = 600
+        menu.addItem(stepped)
         menu.addItem(.separator())
         let capture = NSMenuItem(title: "Show in screenshots & recordings",
                                  action: #selector(toggleCapture), keyEquivalent: "")
@@ -301,6 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scene.config = Config.load()
         menu.item(withTag: 300)?.state = scene.config.hideFromCapture ? .off : .on
         menu.item(withTag: 400)?.state = LoginItem.isEnabled ? .on : .off
+        menu.item(withTag: 600)?.state = StayAwake.isOn ? .on : .off
         if let modes = menu.items.first(where: { $0.title == "Mode" })?.submenu {
             modes.item(withTag: 500)?.state = scene.config.mode == "crawler" ? .off : .on
             modes.item(withTag: 501)?.state = scene.config.mode == "crawler" ? .on : .off
@@ -499,6 +506,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Config.update("hideFromCapture", to: scene.config.hideFromCapture)
         applyConfig()
         sender.state = scene.config.hideFromCapture ? .off : .on
+    }
+
+    /// Ticked, the Mac never sleeps and the screen stays on. Saved to
+    /// settings, so it is still on after a restart.
+    @objc private func toggleSteppedOut(_ sender: NSMenuItem) {
+        scene.config.steppedOut.toggle()
+        Config.update("steppedOut", to: scene.config.steppedOut)
+        applySteppedOut()
+        sender.state = StayAwake.isOn ? .on : .off
+    }
+
+    /// The cup next to the cat in the menu bar says the Mac is being kept awake.
+    private func applySteppedOut() {
+        let wasOn = StayAwake.isOn
+        StayAwake.set(scene.config.steppedOut)
+        statusItem.button?.title = StayAwake.isOn ? "🐈☕" : "🐈"
+        guard wasOn != StayAwake.isOn else { return }
+        ActivityLog.shared.cat(StayAwake.isOn ? "stepped out: Mac stays awake" : "stepped out off: Mac may sleep")
     }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {

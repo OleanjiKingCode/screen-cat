@@ -265,6 +265,11 @@ it, and those are never requested.
 - **Take a walk / Have a nap / Chase a ball / Beg for food**: play a routine now.
 - **Ask to play**: put the invite up now.
 - **Pause**: stop until you resume.
+- **Stepped out (Mac never sleeps)**: ticked, the Mac does not sleep and the
+  screen does not go off, like `caffeinate -di`. A cup shows next to the cat in
+  the menu bar while it is on. Saved to settings, so it survives a restart.
+  Quitting the cat lets the Mac sleep again. Closing the lid on battery still
+  sleeps it.
 - The top line says what the cat is doing, or how long until the next visit.
 - **Show in screenshots & recordings**: ticked, the cat appears in captures.
   Unticked (the default) it stays out of them. Takes effect immediately and is
@@ -314,13 +319,14 @@ it, and those are never requested.
 | `mode` | `normal` | `normal` or `crawler`. Also set from the menu and the playground. |
 | `crawlChance` | `0.7` | In crawler mode, the chance a visit is a crawl. |
 | `idleCrawl` | `true` | Start the nonstop crawl when you leave the Mac alone. |
-| `idleCrawlSeconds` | `1800` | How long with no input before it starts (30 minutes). At least `15`. Keep it below the display sleep time, or the screen goes off first. |
+| `idleCrawlSeconds` | `1800` | How long with no input before it starts (30 minutes). At least `15`. Keep it below the display sleep time, or the screen goes off first (not a problem while **Stepped out** is on). |
 | `growScale` | `2` | How big the cat grows when the idle crawl starts, `1` to `4`. |
 | `glitchStyleSeconds` | `60` | How long each full-screen glitch style plays at speed 1. At least `5`. |
 | `glitchSpeed` | `2` | How fast the idle crawl's glitches animate and change. |
 | `zeroDaySpeed` | `8` | The same for Zero Day. |
 | `zeroDaySound` | `true` | Play Zero Day's background sound. |
 | `zeroDayVolume` | `0.25` | How loud it is, `0` to `1`. |
+| `steppedOut` | `false` | Keep the Mac awake and the screen on. Also on the menu as **Stepped out**. |
 | `activityLog` | `true` | Keep the daily activity log in `~/Library/Logs/ScreenCat`. |
 | `activityLogDays` | `30` | Delete day files older than this. `0` keeps them forever. |
 | `opacity` | `1.0` | Overall transparency, `0.1` to `1.0`. |

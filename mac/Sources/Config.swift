@@ -114,6 +114,9 @@ struct Config {
     /// Zero Day's background sound, and how loud it is (0 to 1).
     var zeroDaySound = true
     var zeroDayVolume: CGFloat = 0.25
+    /// Stepped out: keep the Mac awake and the screen on until you turn it
+    /// off. Works with any mode.
+    var steppedOut = false
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary of apps, sleep, Bluetooth and what is running,
@@ -205,6 +208,7 @@ struct Config {
         c.zeroDaySpeed          = num("zeroDaySpeed")          ?? c.zeroDaySpeed
         c.zeroDaySound          = bool("zeroDaySound")         ?? c.zeroDaySound
         c.zeroDayVolume         = num("zeroDayVolume")         ?? c.zeroDayVolume
+        c.steppedOut            = bool("steppedOut")           ?? c.steppedOut
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
         c.activityLogDays       = num("activityLogDays")       ?? c.activityLogDays
@@ -307,6 +311,7 @@ struct Config {
             "zeroDaySpeed": d.zeroDaySpeed,
             "zeroDaySound": d.zeroDaySound,
             "zeroDayVolume": d.zeroDayVolume,
+            "steppedOut": d.steppedOut,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,
