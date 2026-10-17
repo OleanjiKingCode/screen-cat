@@ -59,6 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let asker = Asker()
     private let questions = QuestionWatch()
     private var answerPanel: AnswerPanel?
+    /// The newest answer, so copying part of it is not asked about again.
+    private var lastAnswer = ""
+    /// After the cat in the menu bar: 💭 while an answer with no card is on
+    /// its way, then ✅ or ⚠️ for a few seconds.
+    private var badge = ""
+    private var badgeTimer: Timer?
 
     /// `--selftest <png>`: run the real on-screen window, force a walk, then
     /// photograph our own window to prove what actually reached the screen.
@@ -179,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applySteppedOut()
         questions.onQuestion = { [weak self] question in self?.ask(question) }
         questions.isOwnText = { [weak self] text in
-            guard let answer = self?.answerPanel?.answer, !answer.isEmpty else { return false }
+            guard let answer = self?.lastAnswer, !answer.isEmpty else { return false }
             return answer.contains(text)
         }
         applyLLMMode()
@@ -296,6 +302,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                      action: #selector(toggleCopyAnswers), keyEquivalent: "")
         copyAnswers.tag = 701
         menu.addItem(copyAnswers)
+        let showAnswers = NSMenuItem(title: "Show answer box", action: #selector(toggleShowAnswers), keyEquivalent: "")
+        showAnswers.tag = 702
+        menu.addItem(showAnswers)
         menu.addItem(withTitle: "Ask about what I copied", action: #selector(askAboutClipboard), keyEquivalent: "")
         menu.addItem(withTitle: "Open playground", action: #selector(openPlayground), keyEquivalent: "")
         menu.addItem(.separator())
@@ -335,6 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.item(withTag: 600)?.state = StayAwake.isOn ? .on : .off
         menu.item(withTag: 700)?.state = scene.config.llmMode ? .on : .off
         menu.item(withTag: 701)?.state = scene.config.llmCopyAnswer ? .on : .off
+        menu.item(withTag: 702)?.state = scene.config.llmShowAnswer ? .on : .off
         if let modes = menu.items.first(where: { $0.title == "Mode" })?.submenu {
             modes.item(withTag: 500)?.state = scene.config.mode == "crawler" ? .off : .on
             modes.item(withTag: 501)?.state = scene.config.mode == "crawler" ? .on : .off
@@ -548,7 +558,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applySteppedOut() {
         let wasOn = StayAwake.isOn
         StayAwake.set(scene.config.steppedOut)
-        statusItem.button?.title = StayAwake.isOn ? "🐈☕" : "🐈"
+        refreshStatusTitle()
         guard wasOn != StayAwake.isOn else { return }
         ActivityLog.shared.cat(StayAwake.isOn ? "stepped out: Mac stays awake" : "stepped out off: Mac may sleep")
     }
@@ -567,6 +577,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scene.config.llmCopyAnswer.toggle()
         Config.update("llmCopyAnswer", to: scene.config.llmCopyAnswer)
         sender.state = scene.config.llmCopyAnswer ? .on : .off
+    }
+
+    /// Unticked, there is no cat and no card: each answer goes straight to
+    /// the clipboard. Unticking it while a card is up closes the card.
+    @objc private func toggleShowAnswers(_ sender: NSMenuItem) {
+        scene.config.llmShowAnswer.toggle()
+        Config.update("llmShowAnswer", to: scene.config.llmShowAnswer)
+        sender.state = scene.config.llmShowAnswer ? .on : .off
+        if !scene.config.llmShowAnswer, behavior is AskBehavior {
+            answerPanel?.dismiss()
+            closeAnswer()
+        }
     }
 
     /// Listens only while the mode is on. Turning it on never answers what
@@ -597,6 +619,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func ask(_ question: Question, fromMenu: Bool = false) {
         guard !away, fromMenu || !paused else { return }
         scene.config = Config.load()
+        guard scene.config.llmShowAnswer else { askQuietly(question); return }
+        // A quiet question still on its way is replaced by this one.
+        if !badge.isEmpty { setBadge("") }
         // A cat already walking off cannot sit under a new card: send a new one.
         if (behavior as? AskBehavior)?.isLeaving ?? true { start(.ask, force: true) }
         guard let sitting = behavior as? AskBehavior else { return }
@@ -607,11 +632,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ActivityLog.shared.cat("llm: asked about \(question.summary)")
         let asked = Date()
         let c = scene.config
-        asker.ask(question, config: c) { answer in
+        asker.ask(question, config: c) { [weak self] answer in
+            guard let self else { return }
             let took = String(format: "%.1fs", Date().timeIntervalSince(asked))
             switch answer {
             case .text(let text):
                 ActivityLog.shared.cat("llm: answered in \(took)")
+                self.lastAnswer = text
                 panel.showAnswer(text, closeAfter: c.llmAnswerSeconds)
                 // Through the card's own copy, so the watcher knows it is ours.
                 if c.llmCopyAnswer { panel.copyAnswer() }
@@ -622,15 +649,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// No cat and no card: the answer goes straight to the clipboard, and
+    /// the menu bar icon shows it is coming, then that it is ready.
+    private func askQuietly(_ question: Question) {
+        ActivityLog.shared.cat("llm: asked about \(question.summary), no card")
+        setBadge("💭")
+        let asked = Date()
+        asker.ask(question, config: scene.config) { [weak self] answer in
+            guard let self else { return }
+            let took = String(format: "%.1fs", Date().timeIntervalSince(asked))
+            switch answer {
+            case .text(let text):
+                ActivityLog.shared.cat("llm: answered in \(took), copied")
+                self.lastAnswer = text
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                self.questions.ownChange = NSPasteboard.general.changeCount
+                self.statusItem.button?.toolTip = "Screen Cat: answer copied"
+                self.setBadge("✅", for: 4)
+            case .failed(let why):
+                ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
+                self.statusItem.button?.toolTip = "Screen Cat: \(why)"
+                self.setBadge("⚠️", for: 6)
+            }
+        }
+    }
+
+    private func setBadge(_ mark: String, for seconds: TimeInterval? = nil) {
+        badgeTimer?.invalidate()
+        badge = mark
+        refreshStatusTitle()
+        guard let seconds else { return }
+        badgeTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            self?.badge = ""
+            self?.statusItem.button?.toolTip = "Screen Cat"
+            self?.refreshStatusTitle()
+        }
+    }
+
+    /// The cat, a cup while the Mac is kept awake, then the answer badge.
+    private func refreshStatusTitle() {
+        statusItem.button?.title = "🐈" + (StayAwake.isOn ? "☕" : "") + badge
+    }
+
+    /// Sends the sitting cat off and drops any answer still coming.
+    private func closeAnswer() {
+        asker.cancel()
+        (behavior as? AskBehavior)?.release()
+    }
+
     private func makeAnswerPanel() -> AnswerPanel {
         let panel = AnswerPanel(palette: scene.config.extras)
         panel.sharingType = window.sharingType
         panel.level = window.level
-        // Closing the card sends the cat off and drops any answer still coming.
-        panel.onClose = { [weak self] in
-            self?.asker.cancel()
-            (self?.behavior as? AskBehavior)?.release()
-        }
+        panel.onClose = { [weak self] in self?.closeAnswer() }
         panel.onCopy = { [weak self] in self?.questions.ownChange = NSPasteboard.general.changeCount }
         answerPanel = panel
         return panel
@@ -848,6 +920,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func stopBehavior() {
+        let wasAsking = behavior is AskBehavior
         if behavior != nil {
             NSLog("Screen Cat: routine ended")
             ActivityLog.shared.cat("went in")
@@ -866,8 +939,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view?.zap = nil
         view?.aura = nil
         takeover?.clear()
-        // The card goes with the cat, whatever sent the cat away.
-        asker.cancel()
+        // The card goes with the cat, whatever sent the cat away. An answer
+        // with no card is not the cat's, so a new routine leaves it running.
+        if wasAsking { asker.cancel() }
         answerPanel?.dismiss()
         shownRecipe = -1
         zeroDaySound.stop()

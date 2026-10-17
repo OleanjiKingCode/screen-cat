@@ -162,6 +162,13 @@ and the cat walks off. Otherwise it closes `llmAnswerSeconds` (120) after the
 answer arrives, but never while the pointer is on it. You can drag the card.
 A new question while the cat is sitting reuses the same card.
 
+**Show answer box** (`llmShowAnswer`, on by default) controls the cat and the
+card. Untick it and neither appears: each answer goes straight to the
+clipboard, whatever **Copy answers to clipboard** says, and the cat in the menu
+bar shows 💭 while it thinks, then ✅ when the answer is ready to paste (⚠️ if
+there is no answer; hover the icon for why). Unticking it while a card is up
+closes the card.
+
 **Ask about what I copied** asks about the clipboard once, with or without LLM
 mode.
 
@@ -308,6 +315,7 @@ it, and those are never requested.
 - **Ask to play**: put the invite up now.
 - **LLM mode (answers what you copy or screenshot)**: see LLM mode above.
   **Copy answers to clipboard** puts each answer on the clipboard.
+  **Show answer box** turns the cat and the card on or off.
   **Ask about what I copied** asks once about the clipboard.
 - **Pause**: stop until you resume.
 - **Stepped out (Mac never sleeps)**: ticked, the Mac does not sleep and the
@@ -375,6 +383,7 @@ it, and those are never requested.
 | `llmMode` | `false` | Answer what you copy and screenshot. Also on the menu as **LLM mode**. |
 | `llmFromClipboard` / `llmFromScreenshots` | `true` / `true` | Which of the two LLM mode listens to. |
 | `llmCopyAnswer` | `true` | Put each answer on the clipboard as it arrives. Also on the menu as **Copy answers to clipboard**. |
+| `llmShowAnswer` | `true` | Show the cat and the answer card. `false` sends answers only to the clipboard, with a badge on the menu bar icon. Also on the menu as **Show answer box**. |
 | `llmModel` | `claude-opus-5-5` | The Claude model that answers. |
 | `llmEffort` | `medium` | How hard it thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `llmAnswerSeconds` | `120` | Close the answer this long after it arrives, unless the pointer is on it. `0` keeps it until you close it. |
