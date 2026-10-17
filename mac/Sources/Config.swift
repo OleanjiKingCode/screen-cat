@@ -118,6 +118,21 @@ struct Config {
     /// off. Works with any mode.
     var steppedOut = false
 
+    // LLM mode ----------------------------------------------------------------
+    /// Answer what you copy, and screenshots you take, with Claude. Runs the
+    /// `claude` command line tool with the login it already has.
+    var llmMode = false
+    var llmFromClipboard = true
+    var llmFromScreenshots = true
+    var llmModel = "claude-opus-5-5"
+    /// How hard Claude thinks: "low", "medium", "high", "xhigh" or "max".
+    var llmEffort = "medium"
+    /// Close the answer this long after it arrives, unless the pointer is on
+    /// it. 0 keeps it up until you close it.
+    var llmAnswerSeconds: CGFloat = 120
+    /// Full path to `claude`, if it is not in one of the usual places.
+    var llmClaudePath = ""
+
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary of apps, sleep, Bluetooth and what is running,
     /// in ~/Library/Logs/ScreenCat. Local only.
@@ -209,6 +224,13 @@ struct Config {
         c.zeroDaySound          = bool("zeroDaySound")         ?? c.zeroDaySound
         c.zeroDayVolume         = num("zeroDayVolume")         ?? c.zeroDayVolume
         c.steppedOut            = bool("steppedOut")           ?? c.steppedOut
+        c.llmMode               = bool("llmMode")              ?? c.llmMode
+        c.llmFromClipboard      = bool("llmFromClipboard")     ?? c.llmFromClipboard
+        c.llmFromScreenshots    = bool("llmFromScreenshots")   ?? c.llmFromScreenshots
+        c.llmModel              = str("llmModel")              ?? c.llmModel
+        c.llmEffort             = str("llmEffort")             ?? c.llmEffort
+        c.llmAnswerSeconds      = num("llmAnswerSeconds")      ?? c.llmAnswerSeconds
+        c.llmClaudePath         = str("llmClaudePath")         ?? c.llmClaudePath
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
         c.activityLogDays       = num("activityLogDays")       ?? c.activityLogDays
@@ -238,6 +260,8 @@ struct Config {
         c.zeroDaySpeed = max(1, min(16, c.zeroDaySpeed))
         c.zeroDayVolume = max(0, min(1, c.zeroDayVolume))
         c.growScale = max(1, min(4, c.growScale))
+        c.llmAnswerSeconds = max(0, c.llmAnswerSeconds)
+        if !["low", "medium", "high", "xhigh", "max"].contains(c.llmEffort) { c.llmEffort = "medium" }
         c.chainChance = max(0, min(1, c.chainChance))
         c.glassesChance = max(0, min(1, c.glassesChance))
         return c
@@ -312,6 +336,12 @@ struct Config {
             "zeroDaySound": d.zeroDaySound,
             "zeroDayVolume": d.zeroDayVolume,
             "steppedOut": d.steppedOut,
+            "llmMode": d.llmMode,
+            "llmFromClipboard": d.llmFromClipboard,
+            "llmFromScreenshots": d.llmFromScreenshots,
+            "llmModel": d.llmModel,
+            "llmEffort": d.llmEffort,
+            "llmAnswerSeconds": d.llmAnswerSeconds,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,

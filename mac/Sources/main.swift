@@ -54,6 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The shrink-away exit has already put you back in your app.
     private var exitHandled = false
 
+    // LLM mode: what you copy or screenshot goes to Claude, and the cat sits
+    // under the answer.
+    private let asker = Asker()
+    private let questions = QuestionWatch()
+    private var answerPanel: AnswerPanel?
+
     /// `--selftest <png>`: run the real on-screen window, force a walk, then
     /// photograph our own window to prove what actually reached the screen.
     private func runSelfTest(to path: String) {
@@ -171,6 +177,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         applySteppedOut()
+        questions.onQuestion = { [weak self] question in self?.ask(question) }
+        questions.isOwnText = { [weak self] text in
+            guard let answer = self?.answerPanel?.answer, !answer.isEmpty else { return false }
+            return answer.contains(text)
+        }
+        applyLLMMode()
         schedule(after: demo ? 2 : scene.config.firstAppearanceDelay)
     }
 
@@ -185,6 +197,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // .none keeps the cat off screenshots, screen recordings and anything
         // being screen-shared, while you still see it on the glass.
         window.sharingType = c.hideFromCapture ? .none : .readOnly
+        // The answer card follows the cat: in captures only if the cat is.
+        answerPanel?.sharingType = window.sharingType
+        answerPanel?.level = window.level
     }
 
     /// The sheet is recoloured at load time, so it is only rebuilt when the
@@ -207,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scene.config = Config.load()
         applyConfig()
         applySteppedOut()
+        applyLLMMode()
         loadSprites()
         view.needsDisplay = true
     }
@@ -272,6 +288,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let modeItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
         modeItem.submenu = modes
         menu.addItem(modeItem)
+        let llm = NSMenuItem(title: "LLM mode (answers what you copy or screenshot)",
+                             action: #selector(toggleLLMMode), keyEquivalent: "")
+        llm.tag = 700
+        menu.addItem(llm)
+        menu.addItem(withTitle: "Ask about what I copied", action: #selector(askAboutClipboard), keyEquivalent: "")
         menu.addItem(withTitle: "Open playground", action: #selector(openPlayground), keyEquivalent: "")
         menu.addItem(.separator())
         let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
@@ -308,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.item(withTag: 300)?.state = scene.config.hideFromCapture ? .off : .on
         menu.item(withTag: 400)?.state = LoginItem.isEnabled ? .on : .off
         menu.item(withTag: 600)?.state = StayAwake.isOn ? .on : .off
+        menu.item(withTag: 700)?.state = scene.config.llmMode ? .on : .off
         if let modes = menu.items.first(where: { $0.title == "Mode" })?.submenu {
             modes.item(withTag: 500)?.state = scene.config.mode == "crawler" ? .off : .on
             modes.item(withTag: 501)?.state = scene.config.mode == "crawler" ? .on : .off
@@ -526,6 +548,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ActivityLog.shared.cat(StayAwake.isOn ? "stepped out: Mac stays awake" : "stepped out off: Mac may sleep")
     }
 
+    // MARK: - LLM mode
+
+    @objc private func toggleLLMMode(_ sender: NSMenuItem) {
+        scene.config.llmMode.toggle()
+        Config.update("llmMode", to: scene.config.llmMode)
+        applyLLMMode()
+        sender.state = scene.config.llmMode ? .on : .off
+    }
+
+    /// Listens only while the mode is on. Turning it on never answers what
+    /// was already on the clipboard.
+    private func applyLLMMode() {
+        let c = scene.config
+        guard c.llmMode else {
+            if questions.isRunning { ActivityLog.shared.cat("llm mode off") }
+            questions.stop()
+            return
+        }
+        if !questions.isRunning { ActivityLog.shared.cat("llm mode on") }
+        questions.start(clipboard: c.llmFromClipboard, screenshots: c.llmFromScreenshots)
+    }
+
+    /// A one-off, with or without LLM mode: ask about the clipboard now.
+    @objc private func askAboutClipboard() {
+        guard let question = QuestionWatch.clipboardQuestion() else {
+            NSSound.beep()
+            return
+        }
+        ask(question, fromMenu: true)
+    }
+
+    /// The cat walks on and sits, the card goes up above where it will sit,
+    /// and the answer fills the card when Claude replies. A new question while
+    /// the cat is already sitting reuses the same cat and card.
+    private func ask(_ question: Question, fromMenu: Bool = false) {
+        guard !away, fromMenu || !paused else { return }
+        scene.config = Config.load()
+        // A cat already walking off cannot sit under a new card: send a new one.
+        if (behavior as? AskBehavior)?.isLeaving ?? true { start(.ask, force: true) }
+        guard let sitting = behavior as? AskBehavior else { return }
+        let panel = answerPanel ?? makeAnswerPanel()
+        let head = CGPoint(x: sitting.spot.x, y: sitting.spot.y + scene.cat.size * 1.05)
+            .applying(scene.surface.transform(for: scene.screenRect))
+        panel.showThinking(question, above: head, within: scene.screenRect)
+        ActivityLog.shared.cat("llm: asked about \(question.summary)")
+        let asked = Date()
+        let c = scene.config
+        asker.ask(question, config: c) { answer in
+            let took = String(format: "%.1fs", Date().timeIntervalSince(asked))
+            switch answer {
+            case .text(let text):
+                ActivityLog.shared.cat("llm: answered in \(took)")
+                panel.showAnswer(text, closeAfter: c.llmAnswerSeconds)
+            case .failed(let why):
+                ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
+                panel.showError(why, closeAfter: c.llmAnswerSeconds)
+            }
+        }
+    }
+
+    private func makeAnswerPanel() -> AnswerPanel {
+        let panel = AnswerPanel(palette: scene.config.extras)
+        panel.sharingType = window.sharingType
+        panel.level = window.level
+        // Closing the card sends the cat off and drops any answer still coming.
+        panel.onClose = { [weak self] in
+            self?.asker.cancel()
+            (self?.behavior as? AskBehavior)?.release()
+        }
+        panel.onCopy = { [weak self] in self?.questions.ownChange = NSPasteboard.general.changeCount }
+        answerPanel = panel
+        return panel
+    }
+
     @objc private func toggleLogin(_ sender: NSMenuItem) {
         LoginItem.setEnabled(!LoginItem.isEnabled)
         sender.state = LoginItem.isEnabled ? .on : .off
@@ -684,7 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Begging faces the viewer, so it only makes sense the right way up.
         // Begging and the play invite both face you and need a clickable
         // bubble the right way up, so they stay on the bottom edge.
-        let mayUseWall = routine != .hungry && routine != .play && routine != .crawl
+        let mayUseWall = routine != .hungry && routine != .play && routine != .crawl && routine != .ask
             && routine != .idleCrawl && routine != .zeroDay
             && Double.random(in: 0..<1) < scene.config.wallChance
         let surface: Surface = mayUseWall ? (Bool.random() ? .left : .right) : .bottom
@@ -756,6 +852,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view?.zap = nil
         view?.aura = nil
         takeover?.clear()
+        // The card goes with the cat, whatever sent the cat away.
+        asker.cancel()
+        answerPanel?.dismiss()
         shownRecipe = -1
         zeroDaySound.stop()
         petDwell = 0
@@ -1019,6 +1118,34 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--playground" 
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
         print("wrote \(CommandLine.arguments[2])")
     }
+    exit(0)
+}
+
+// `--ask <text>` or `--ask-image <file>` sends one question through LLM mode's
+// asker, with the real settings, and prints the answer. No cat, no card.
+if CommandLine.arguments.count >= 3, ["--ask", "--ask-image"].contains(CommandLine.arguments[1]) {
+    let arg = CommandLine.arguments[2]
+    let question: Question
+    if CommandLine.arguments[1] == "--ask" {
+        question = .text(arg)
+    } else if let image = NSImage(contentsOfFile: arg), let png = pngForUpload(image) {
+        question = .image(png, from: "screenshot")
+    } else {
+        print("could not read \(arg)")
+        exit(1)
+    }
+    let asker = Asker()
+    let started = Date()
+    var finished = false
+    asker.ask(question, config: Config.load()) { answer in
+        switch answer {
+        case .text(let text): print(text)
+        case .failed(let why): print("FAILED: \(why)")
+        }
+        print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))
+        finished = true
+    }
+    while !finished { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
     exit(0)
 }
 

@@ -580,6 +580,68 @@ final class PlayBehavior: Behavior {
 /// themselves are never touched. Movement keeps every rule the other routines
 /// keep: in from the side, level or downhill, out the side. It never climbs to
 /// a window; the zap goes up instead.
+// MARK: - LLM mode
+
+/// LLM mode: walks on, sits under the answer card, and stays while the card is
+/// up. `release()` sends it off again.
+final class AskBehavior: Behavior {
+    private var script: ScriptedBehavior
+    private var leaving: ScriptedBehavior?
+    private var seated = false
+    private var released = false
+    private var fidget: CGFloat = 0
+    /// Where the cat sits, so the card can go up before it arrives.
+    let spot: CGPoint
+
+    init(scene: Scene) {
+        let cat = scene.cat
+        let rect = scene.stage
+        let size = cat.size
+        let start = entryPoint(scene, size: size)
+        cat.pos = start
+        cat.visible = true
+        // Toward the right, and far enough in that the card above fits.
+        let margin = max(220, size * 2)
+        let low = max(rect.minX + margin, rect.minX + rect.width * 0.55)
+        let high = max(low, min(rect.maxX - margin, rect.minX + rect.width * 0.8))
+        spot = CGPoint(x: CGFloat.random(in: low...high), y: min(start.y, groundY(scene, size: size)))
+        script = ScriptedBehavior([
+            .walkTo(spot, pace: 1.2, bend: size * 0.3),
+            .hold(.standIdle, 0.3),
+        ])
+    }
+
+    func release() { released = true }
+    var isLeaving: Bool { released }
+
+    func update(_ dt: CGFloat, _ scene: Scene) -> Bool {
+        let cat = scene.cat
+        if let leaving { return leaving.update(dt, scene) }
+        if released {
+            leaving = ScriptedBehavior([
+                .hold(.standIdle, 0.4),
+                .walkTo(exitPoint(scene.stage, from: cat.pos, size: cat.size), pace: 1.0, bend: cat.size * 0.3),
+            ])
+            return false
+        }
+        if !seated {
+            if script.update(dt, scene) {
+                seated = true
+                cat.setClip(.sitIdle)
+                fidget = CGFloat.random(in: 5...10)
+            }
+            return false
+        }
+        // Shift about a little while you read, so it does not look frozen.
+        fidget -= dt
+        if fidget <= 0 {
+            fidget = CGFloat.random(in: 5...12)
+            cat.setClip([Clip.sitIdle, .sitIdle, .sitIdle, .standIdle].randomElement()!)
+        }
+        return false
+    }
+}
+
 final class CrawlBehavior: Behavior, BreachSource {
     private enum Stage { case walking, zapping, watching, leaving }
     private var stage: Stage = .walking
@@ -673,6 +735,8 @@ enum Routine: String, CaseIterable {
     case idleCrawl = "idlecrawl"
     /// Zero Day: three minutes of catless glitching at high speed.
     case zeroDay = "zeroday"
+    /// LLM mode: sits under the answer to what you copied.
+    case ask
 }
 
 func makeBehavior(_ routine: Routine, scene: Scene) -> Behavior {
@@ -689,6 +753,9 @@ func makeBehavior(_ routine: Routine, scene: Scene) -> Behavior {
 
     case .play:
         return PlayBehavior(scene: scene)
+
+    case .ask:
+        return AskBehavior(scene: scene)
 
     case .crawl:
         return CrawlBehavior(scene: scene, targets: scene.crawlTargets)

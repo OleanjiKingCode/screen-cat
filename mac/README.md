@@ -147,6 +147,46 @@ and log it: `--idle-selftest`. The short per-window glitches of crawler mode:
 a crawl on demand; between them it picks its own routines for the current mode.
 Render it headless with `--playground out.png [seconds]`.
 
+## LLM mode
+
+Tick **LLM mode (answers what you copy or screenshot)** in the menu. From then
+on, whatever you copy, and every screenshot you take, goes to Claude. The cat
+walks on, sits, and holds up a card: "THINKING..." with what you asked, then
+the answer. It works out what you want: a question gets answered, an equation
+or sum gets solved with the steps, a claim gets checked, a word gets explained,
+code or an error gets explained or fixed. The answer is plain text you can
+select, and **COPY** puts it on the clipboard. Close the card with the ✕ or Esc,
+and the cat walks off. Otherwise it closes `llmAnswerSeconds` (120) after the
+answer arrives, but never while the pointer is on it. You can drag the card.
+A new question while the cat is sitting reuses the same card.
+
+**Ask about what I copied** asks about the clipboard once, with or without LLM
+mode.
+
+- **How it talks to Claude**: it runs the `claude` command line tool (Claude
+  Code) with the login you already have, so there is no API key to set up. It
+  runs with no tools, no MCP servers, no CLAUDE.md and no memory, from an empty
+  folder. An answer takes about 7 to 10 seconds. If `claude` is not in
+  `~/.local/bin`, `/opt/homebrew/bin` or `/usr/local/bin`, set `llmClaudePath`.
+- **Screenshots** are picked up from the folder the Screenshot app saves to and
+  from the Desktop, by the tag macOS puts on every screenshot. macOS asks once
+  for access to the Desktop folder. The file only appears after the floating
+  thumbnail goes, about 5 seconds; turn the thumbnail off in the Screenshot
+  app's Options for a faster answer. A screenshot copied to the clipboard
+  (Control in the shortcut) is picked up at once.
+- **What is never sent**: anything a password manager marks as private, files
+  copied in Finder, what was already on the clipboard when you turned the mode
+  on, the same text twice in a row, and text copied out of the cat's own card.
+  Everything else you copy is sent to Anthropic while the mode is on.
+- **Screenshots & recordings**: the card follows the cat. With **Show in
+  screenshots & recordings** unticked (the default), neither shows up in
+  captures or screen sharing; ticked, both do. LLM mode works either way.
+- Pause stops it from answering; a menu pick of **Ask about what I copied**
+  still works while paused.
+
+Test it without the cat: `--ask "2x^2 - 8x + 6 = 0"` or
+`--ask-image screenshot.png` prints the answer.
+
 ## Activity log
 
 A plain-text diary of the Mac, one file per day in `~/Library/Logs/ScreenCat`
@@ -264,6 +304,8 @@ it, and those are never requested.
 
 - **Take a walk / Have a nap / Chase a ball / Beg for food**: play a routine now.
 - **Ask to play**: put the invite up now.
+- **LLM mode (answers what you copy or screenshot)**: see LLM mode above.
+  **Ask about what I copied** asks once about the clipboard.
 - **Pause**: stop until you resume.
 - **Stepped out (Mac never sleeps)**: ticked, the Mac does not sleep and the
   screen does not go off, like `caffeinate -di`. A cup shows next to the cat in
@@ -327,6 +369,12 @@ it, and those are never requested.
 | `zeroDaySound` | `true` | Play Zero Day's background sound. |
 | `zeroDayVolume` | `0.25` | How loud it is, `0` to `1`. |
 | `steppedOut` | `false` | Keep the Mac awake and the screen on. Also on the menu as **Stepped out**. |
+| `llmMode` | `false` | Answer what you copy and screenshot. Also on the menu as **LLM mode**. |
+| `llmFromClipboard` / `llmFromScreenshots` | `true` / `true` | Which of the two LLM mode listens to. |
+| `llmModel` | `claude-opus-5-5` | The Claude model that answers. |
+| `llmEffort` | `medium` | How hard it thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `llmAnswerSeconds` | `120` | Close the answer this long after it arrives, unless the pointer is on it. `0` keeps it until you close it. |
+| `llmClaudePath` | `""` | Full path to `claude`, if it is not in one of the usual places. |
 | `activityLog` | `true` | Keep the daily activity log in `~/Library/Logs/ScreenCat`. |
 | `activityLogDays` | `30` | Delete day files older than this. `0` keeps them forever. |
 | `opacity` | `1.0` | Overall transparency, `0.1` to `1.0`. |
