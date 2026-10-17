@@ -15,7 +15,8 @@ UNIVERSAL=1 ./build.sh
 mkdir -p dist
 ZIP="dist/ScreenCat-mac-$VERSION.zip"
 rm -f "$ZIP"
-# ditto keeps the bundle's signature and metadata intact; zip does not.
-ditto -c -k --keepParent ScreenCat.app "$ZIP"
+# ditto keeps the bundle intact. No resource forks or extended attributes:
+# those become ._ files that break the signature when unzipped by `unzip`.
+ditto -c -k --norsrc --noextattr --keepParent ScreenCat.app "$ZIP"
 echo "release: $(pwd)/$ZIP"
 shasum -a 256 "$ZIP"
