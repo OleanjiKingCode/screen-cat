@@ -20,14 +20,16 @@ enum Answer {
     case failed(String)
 }
 
-/// Answers a question with the `claude` command line tool and the login it
-/// already has, so LLM mode needs no API key. One question at a time: a new
-/// one cancels the one before it.
+/// Answers a question with Claude. With your own API key it calls the Claude
+/// API directly. Without one it runs the `claude` command line tool with the
+/// login it already has. One question at a time: a new one cancels the one
+/// before it.
 ///
 /// The tool runs with no tools, no MCP servers, no CLAUDE.md and no memory,
 /// from an empty folder, so your coding setup does not leak into the answers.
 final class Asker {
     private var process: Process?
+    private var task: URLSessionDataTask?
     /// Bumped on every ask and cancel, so a late reply to an old question is
     /// dropped instead of replacing the new one.
     private var generation = 0
@@ -64,6 +66,8 @@ final class Asker {
         generation += 1
         process?.terminate()
         process = nil
+        task?.cancel()
+        task = nil
     }
 
     /// Calls `done` once, on the main queue, unless cancelled first.
@@ -76,8 +80,13 @@ final class Asker {
                 // Once only: a timeout and the reader can both get here.
                 self.generation += 1
                 self.process = nil
+                self.task = nil
                 done(answer)
             }
+        }
+        if let key = APIKey.load() {
+            askAPI(question, key: key, config: config, finish: finish)
+            return
         }
         guard let exe = Self.claudePath(config.llmClaudePath) else {
             finish(.failed("Could not find the claude command. Install Claude Code, or set llmClaudePath in settings."))
@@ -143,20 +152,88 @@ final class Asker {
         }
     }
 
-    /// One stream-json user message: the copied text, or the screenshot.
-    private static func inputLine(_ question: Question) -> Data? {
-        let content: [[String: Any]]
+    /// Models that take `fallbacks: "default"`: a declined answer is retried
+    /// on another model by the API instead of coming back empty.
+    private static let fallbackModels: Set<String> = [
+        "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5",
+    ]
+
+    /// Straight to the Claude API with your key. Two or three seconds faster
+    /// than the command line tool, and works on a Mac without Claude Code.
+    private func askAPI(_ question: Question, key: String, config: Config, finish: @escaping (Answer) -> Void) {
+        var body: [String: Any] = [
+            "model": config.llmModel,
+            "max_tokens": 16000,
+            "system": Self.systemPrompt,
+            "output_config": ["effort": config.llmEffort],
+            "messages": [["role": "user", "content": Self.content(question)]],
+        ]
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 180
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.setValue(key, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        if Self.fallbackModels.contains(config.llmModel) {
+            body["fallbacks"] = "default"
+            request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+            finish(.failed("Could not build the request."))
+            return
+        }
+        request.httpBody = data
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error as? URLError, error.code == .cancelled { return }
+            if let error {
+                finish(.failed("Could not reach the Claude API: \(error.localizedDescription)"))
+                return
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            finish(Self.parseAPI(data ?? Data(), status: status))
+        }
+        self.task = task
+        task.resume()
+    }
+
+    /// The reply's text blocks, joined; thinking blocks are skipped. A refusal
+    /// or an API error comes back as a reason to show on the card.
+    private static func parseAPI(_ data: Data, status: Int) -> Answer {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .failed("The Claude API sent back something unreadable (HTTP \(status)).")
+        }
+        if let error = obj["error"] as? [String: Any] {
+            let message = error["message"] as? String ?? "unknown error"
+            return .failed(status == 401 ? "Your API key was not accepted: \(message)" : "Claude API error: \(message)")
+        }
+        if obj["stop_reason"] as? String == "refusal" {
+            return .failed("Claude would not answer this one.")
+        }
+        let blocks = obj["content"] as? [[String: Any]] ?? []
+        let text = blocks.filter { $0["type"] as? String == "text" }
+            .compactMap { $0["text"] as? String }
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? .failed("Claude sent back an empty answer.") : .text(text)
+    }
+
+    /// The user message: the copied text, or the screenshot.
+    private static func content(_ question: Question) -> [[String: Any]] {
         switch question {
         case .text(let s):
-            content = [["type": "text", "text": "I copied this:\n<copied>\n\(s)\n</copied>"]]
+            return [["type": "text", "text": "I copied this:\n<copied>\n\(s)\n</copied>"]]
         case .image(let png, _):
-            content = [
+            return [
                 ["type": "image", "source": ["type": "base64", "media_type": "image/png",
                                              "data": png.base64EncodedString()]],
                 ["type": "text", "text": "I took this screenshot."],
             ]
         }
-        let message: [String: Any] = ["type": "user", "message": ["role": "user", "content": content]]
+    }
+
+    /// One stream-json user message for the command line tool.
+    private static func inputLine(_ question: Question) -> Data? {
+        let message: [String: Any] = ["type": "user", "message": ["role": "user", "content": content(question)]]
         guard var data = try? JSONSerialization.data(withJSONObject: message) else { return nil }
         data.append(0x0A)
         return data
@@ -176,6 +253,48 @@ final class Asker {
         }
         let tail = errors.split(separator: "\n").last.map(String.init) ?? ""
         return .failed(tail.isEmpty ? "claude exited with code \(status) and no answer." : tail)
+    }
+}
+
+/// Your own Anthropic API key, kept in the login keychain and never in the
+/// settings file. `ANTHROPIC_API_KEY` in the environment works too, for
+/// running the binary from a terminal.
+enum APIKey {
+    private static let service = "local.screencat"
+    private static let account = "anthropic-api-key"
+
+    private static var query: [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: service,
+         kSecAttrAccount as String: account]
+    }
+
+    static var isSet: Bool { load() != nil }
+
+    static func load() -> String? {
+        var q = query
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: CFTypeRef?
+        if SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data {
+            let key = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty { return key }
+        }
+        let env = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return env.isEmpty ? nil : env
+    }
+
+    @discardableResult
+    static func save(_ key: String) -> Bool {
+        delete()
+        var q = query
+        q[kSecValueData as String] = Data(key.utf8)
+        return SecItemAdd(q as CFDictionary, nil) == errSecSuccess
+    }
+
+    static func delete() {
+        SecItemDelete(query as CFDictionary)
     }
 }
 
