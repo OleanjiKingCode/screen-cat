@@ -7,7 +7,7 @@ import AppKit
 final class AnswerPanel: NSPanel {
     /// The card was closed by you or timed out. Not called by `dismiss()`.
     var onClose: (() -> Void)?
-    /// The Copy button wrote the clipboard.
+    /// The answer was put on the clipboard, by the button or automatically.
     var onCopy: (() -> Void)?
     private(set) var answer = ""
 
@@ -161,7 +161,7 @@ final class AnswerPanel: NSPanel {
         onClose?()
     }
 
-    @objc private func copyAnswer() {
+    @objc func copyAnswer() {
         guard !answer.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(answer, forType: .string)
@@ -200,7 +200,10 @@ final class AnswerPanel: NSPanel {
         layout.ensureLayout(for: container)
         let textHeight = min(Self.maxTextHeight, max(18, ceil(layout.usedRect(for: container).height)))
         let height = textHeight + 12 + 16 + 10 + 14
-        let room = area.insetBy(dx: 12, dy: 12)
+        // No screen given yet: use the main one, never an empty rect, which
+        // AppKit rejects as a window frame.
+        let given = area.width > 24 && area.height > 24 ? area : (NSScreen.main?.visibleFrame ?? .zero)
+        let room = given.insetBy(dx: 12, dy: 12)
         var x = anchor.x - Self.width / 2
         x = min(max(x, room.minX), room.maxX - Self.width)
         var y = anchor.y + 8

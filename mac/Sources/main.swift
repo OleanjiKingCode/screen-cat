@@ -292,6 +292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              action: #selector(toggleLLMMode), keyEquivalent: "")
         llm.tag = 700
         menu.addItem(llm)
+        let copyAnswers = NSMenuItem(title: "Copy answers to clipboard",
+                                     action: #selector(toggleCopyAnswers), keyEquivalent: "")
+        copyAnswers.tag = 701
+        menu.addItem(copyAnswers)
         menu.addItem(withTitle: "Ask about what I copied", action: #selector(askAboutClipboard), keyEquivalent: "")
         menu.addItem(withTitle: "Open playground", action: #selector(openPlayground), keyEquivalent: "")
         menu.addItem(.separator())
@@ -330,6 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.item(withTag: 400)?.state = LoginItem.isEnabled ? .on : .off
         menu.item(withTag: 600)?.state = StayAwake.isOn ? .on : .off
         menu.item(withTag: 700)?.state = scene.config.llmMode ? .on : .off
+        menu.item(withTag: 701)?.state = scene.config.llmCopyAnswer ? .on : .off
         if let modes = menu.items.first(where: { $0.title == "Mode" })?.submenu {
             modes.item(withTag: 500)?.state = scene.config.mode == "crawler" ? .off : .on
             modes.item(withTag: 501)?.state = scene.config.mode == "crawler" ? .on : .off
@@ -557,6 +562,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sender.state = scene.config.llmMode ? .on : .off
     }
 
+    /// Ticked, each answer goes on the clipboard as it arrives, ready to paste.
+    @objc private func toggleCopyAnswers(_ sender: NSMenuItem) {
+        scene.config.llmCopyAnswer.toggle()
+        Config.update("llmCopyAnswer", to: scene.config.llmCopyAnswer)
+        sender.state = scene.config.llmCopyAnswer ? .on : .off
+    }
+
     /// Listens only while the mode is on. Turning it on never answers what
     /// was already on the clipboard.
     private func applyLLMMode() {
@@ -601,6 +613,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .text(let text):
                 ActivityLog.shared.cat("llm: answered in \(took)")
                 panel.showAnswer(text, closeAfter: c.llmAnswerSeconds)
+                // Through the card's own copy, so the watcher knows it is ours.
+                if c.llmCopyAnswer { panel.copyAnswer() }
             case .failed(let why):
                 ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
                 panel.showError(why, closeAfter: c.llmAnswerSeconds)
@@ -818,7 +832,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scene.cat.visible = true
         let outfit = scene.cat.wearing.map { "\($0)" }.sorted().joined(separator: " + ")
         ActivityLog.shared.cat("came out: \(routine.rawValue) on the \(scene.surface) of \(screen.localizedName)"
-                               + (outfit.isEmpty ? "" : ", wearing \(outfit)") + (force ? " (menu pick)" : ""))
+                               + (outfit.isEmpty ? "" : ", wearing \(outfit)") + (force && routine != .ask ? " (menu pick)" : ""))
         NSLog("Screen Cat: %@ on the %@ at %.0f,%.0f size %.0fpt, stage %@ band %.0f",
               routine.rawValue, String(describing: scene.surface),
               scene.cat.pos.x, scene.cat.pos.y, scene.cat.size,

@@ -155,7 +155,9 @@ walks on, sits, and holds up a card: "THINKING..." with what you asked, then
 the answer. It works out what you want: a question gets answered, an equation
 or sum gets solved with the steps, a claim gets checked, a word gets explained,
 code or an error gets explained or fixed. The answer is plain text you can
-select, and **COPY** puts it on the clipboard. Close the card with the ✕ or Esc,
+select. Each answer also goes on the clipboard as it arrives, ready to paste
+(**Copy answers to clipboard** in the menu, `llmCopyAnswer`, on by default);
+**COPY** on the card copies it again. Close the card with the ✕ or Esc,
 and the cat walks off. Otherwise it closes `llmAnswerSeconds` (120) after the
 answer arrives, but never while the pointer is on it. You can drag the card.
 A new question while the cat is sitting reuses the same card.
@@ -305,6 +307,7 @@ it, and those are never requested.
 - **Take a walk / Have a nap / Chase a ball / Beg for food**: play a routine now.
 - **Ask to play**: put the invite up now.
 - **LLM mode (answers what you copy or screenshot)**: see LLM mode above.
+  **Copy answers to clipboard** puts each answer on the clipboard.
   **Ask about what I copied** asks once about the clipboard.
 - **Pause**: stop until you resume.
 - **Stepped out (Mac never sleeps)**: ticked, the Mac does not sleep and the
@@ -371,6 +374,7 @@ it, and those are never requested.
 | `steppedOut` | `false` | Keep the Mac awake and the screen on. Also on the menu as **Stepped out**. |
 | `llmMode` | `false` | Answer what you copy and screenshot. Also on the menu as **LLM mode**. |
 | `llmFromClipboard` / `llmFromScreenshots` | `true` / `true` | Which of the two LLM mode listens to. |
+| `llmCopyAnswer` | `true` | Put each answer on the clipboard as it arrives. Also on the menu as **Copy answers to clipboard**. |
 | `llmModel` | `claude-opus-5-5` | The Claude model that answers. |
 | `llmEffort` | `medium` | How hard it thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `llmAnswerSeconds` | `120` | Close the answer this long after it arrives, unless the pointer is on it. `0` keeps it until you close it. |

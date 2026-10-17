@@ -124,6 +124,8 @@ struct Config {
     var llmMode = false
     var llmFromClipboard = true
     var llmFromScreenshots = true
+    /// Put each answer on the clipboard as it arrives, ready to paste.
+    var llmCopyAnswer = true
     var llmModel = "claude-opus-5-5"
     /// How hard Claude thinks: "low", "medium", "high", "xhigh" or "max".
     var llmEffort = "medium"
@@ -227,6 +229,7 @@ struct Config {
         c.llmMode               = bool("llmMode")              ?? c.llmMode
         c.llmFromClipboard      = bool("llmFromClipboard")     ?? c.llmFromClipboard
         c.llmFromScreenshots    = bool("llmFromScreenshots")   ?? c.llmFromScreenshots
+        c.llmCopyAnswer         = bool("llmCopyAnswer")        ?? c.llmCopyAnswer
         c.llmModel              = str("llmModel")              ?? c.llmModel
         c.llmEffort             = str("llmEffort")             ?? c.llmEffort
         c.llmAnswerSeconds      = num("llmAnswerSeconds")      ?? c.llmAnswerSeconds
@@ -339,6 +342,7 @@ struct Config {
             "llmMode": d.llmMode,
             "llmFromClipboard": d.llmFromClipboard,
             "llmFromScreenshots": d.llmFromScreenshots,
+            "llmCopyAnswer": d.llmCopyAnswer,
             "llmModel": d.llmModel,
             "llmEffort": d.llmEffort,
             "llmAnswerSeconds": d.llmAnswerSeconds,
