@@ -311,26 +311,52 @@ it, and those are never requested.
 
 ## Menu bar
 
-- **Take a walk / Have a nap / Chase a ball / Beg for food**: play a routine now.
-- **Ask to play**: put the invite up now.
-- **LLM mode (answers what you copy or screenshot)**: see LLM mode above.
-  **Copy answers to clipboard** puts each answer on the clipboard.
-  **Show answer box** turns the cat and the card on or off.
-  **Ask about what I copied** asks once about the clipboard.
-- **Pause**: stop until you resume.
+The icon is the pet itself: a little silhouette of the cat or dog. A ☕ next
+to it means **Stepped out** is on; 💭, ✅ and ⚠️ show an answer on its way when
+the answer box is hidden. The menu, top to bottom:
+
+- The top line says what the pet is doing, or how long until the next visit.
+- **Pause** / **Resume**.
+- **Pet: Cat / Dog**: switch pets, saved, at once.
+- **Mode: Normal / Crawler**: the saved mode (see Modes).
+- **Play now**: walk, nap, ball, beg, ask to play, break some apps, crawl until
+  I touch something, and Zero Day (3 min hack).
+- **LLM mode: On / Off** (see LLM mode):
+  - **Answer what I copy or screenshot**: the mode itself.
+  - **Ask about what I copied now**: once, with or without the mode.
+  - **Show answer box** and **Copy answers to clipboard**.
+  - **Set API key…**: paste an Anthropic API key, kept in the keychain. With a
+    key, answers come from the Claude API directly; without one, from your
+    Claude Code login. The last line says which one is in use.
 - **Stepped out (Mac never sleeps)**: ticked, the Mac does not sleep and the
-  screen does not go off, like `caffeinate -di`. A cup shows next to the cat in
-  the menu bar while it is on. Saved to settings, so it survives a restart.
-  Quitting the cat lets the Mac sleep again. Closing the lid on battery still
+  screen does not go off, like `caffeinate -di`. Saved, so it survives a
+  restart. Quitting lets the Mac sleep again. Closing the lid on battery still
   sleeps it.
-- The top line says what the cat is doing, or how long until the next visit.
-- **Show in screenshots & recordings**: ticked, the cat appears in captures.
-  Unticked (the default) it stays out of them. Takes effect immediately and is
-  written back to your settings, so it survives a restart.
+- **Show in screenshots & recordings**: ticked, the pet and its answer card
+  appear in captures. Unticked (the default) they stay out of them.
 - **Open at login**: writes or removes the same LaunchAgent as
   `install-login-item.sh`. Takes effect at the next login.
-- **Edit settings…** / **Reload settings**.
-- **Quit Screen Cat**.
+- **Open playground**.
+- **Activity log**: today's log, or the folder with all of them.
+- **Settings**: edit the settings file, or reload it.
+- **Quit Screen Cat** (⌘Q).
+
+On the very first launch a short welcome says where the app lives, with a
+button to also open it at login.
+
+## Pets
+
+`pet` is `cat` (the default) or `dog`. The cat follows the colour settings; the
+dog keeps its own tan coat and only its eyes are recoloured. Both wear the same
+shades and gold chain. The dog is original art drawn by `mac/Tools/make_dog.swift`.
+
+## App icon and releases
+
+`--app-icon <dir.iconset>` draws the app icon with the app's own renderer;
+`iconutil -c icns <dir.iconset> -o Assets/AppIcon.icns` turns it into the file
+the build bundles. `./release.sh` builds and zips the app into
+`dist/ScreenCat-mac-<version>.zip` (set `VERSION=` to change it) and prints its
+SHA-256 for the release notes.
 
 ## Settings
 
@@ -339,6 +365,7 @@ it, and those are never requested.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `pet` | `cat` | `cat` or `dog`. Also on the menu as **Pet**. |
 | `sizeDivisor` | `24` | Cat height = screen height / this. **Raise it to shrink the cat, lower it to grow.** The sprites are 32px art, so a small cat is a crisp one. |
 | `firstAppearanceDelay` | `20` | Seconds after launch before the first appearance. |
 | `opacity` | `1.0` | Overall transparency. Below `1` makes a small cat noticeably harder to spot. |

@@ -65,6 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// its way, then ✅ or ⚠️ for a few seconds.
     private var badge = ""
     private var badgeTimer: Timer?
+    /// The pet's silhouette, shown in the menu bar.
+    private var menuIcon: NSImage?
 
     /// `--selftest <png>`: run the real on-screen window, force a walk, then
     /// photograph our own window to prove what actually reached the screen.
@@ -96,6 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        // No settings file yet means this is the very first launch.
+        let firstRun = !FileManager.default.fileExists(atPath: Config.fileURL.path)
         Config.writeDefaultFileIfMissing()
         scene.config = Config.load()
 
@@ -189,7 +193,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return answer.contains(text)
         }
         applyLLMMode()
+        if firstRun { showWelcome() }
         schedule(after: demo ? 2 : scene.config.firstAppearanceDelay)
+    }
+
+    /// The app has no window and no Dock icon, so on the first launch say
+    /// where it went.
+    private func showWelcome() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Screen Cat is running"
+        alert.informativeText = """
+        Your pet lives in the menu bar: look for the little cat at the top right of the screen. \
+        Click it to pick a cat or a dog, change modes, turn on LLM mode, or quit.
+
+        The pet comes out on its own every few seconds. Nothing it does touches your apps.
+        """
+        alert.icon = NSApp.applicationIconImage
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Also open at login")
+        if alert.runModal() == .alertSecondButtonReturn { LoginItem.setEnabled(true) }
     }
 
     // MARK: - Config
@@ -212,16 +235,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// colour settings actually change.
     private func loadSprites() {
         let c = scene.config
-        let key = [c.furColor, c.furShadeColor, c.outlineColor,
+        let key = [c.pet, c.furColor, c.furShadeColor, c.outlineColor,
                    c.innerColor, c.eyeColor, c.ballColor].joined(separator: "|")
         guard key != loadedPaletteKey else { return }
-        let sheet = SpriteSheet(resources: resourcesDirectory(), palette: c.spritePalette)
+        let sheet = SpriteSheet(resources: resourcesDirectory(), config: c)
         guard sheet.isLoaded else {
             NSLog("Screen Cat: could not load sprites from \(resourcesDirectory().path)")
             return
         }
         view.sheet = sheet
         loadedPaletteKey = key
+        menuIcon = sheet.menuBarIcon()
+        refreshStatusTitle()
     }
 
     @objc private func reloadConfig() {
@@ -266,95 +291,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🐈"
+        statusItem.button?.imagePosition = .imageLeft
         statusItem.button?.toolTip = "Screen Cat"
+        menuIcon = view.sheet?.menuBarIcon()
+        refreshStatusTitle()
+
+        func add(_ menu: NSMenu, _ title: String, _ action: Selector?, tag: Int = 0, key: String = "") {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.tag = tag
+            menu.addItem(item)
+        }
+        func submenu(_ menu: NSMenu, _ title: String, tag: Int) -> NSMenu {
+            let sub = NSMenu()
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.tag = tag
+            item.submenu = sub
+            menu.addItem(item)
+            return sub
+        }
 
         let menu = NSMenu()
         menu.delegate = self
-        let status = NSMenuItem(title: "Waiting", action: nil, keyEquivalent: "")
-        status.isEnabled = false
-        status.tag = 200
-        menu.addItem(status)
+        add(menu, "Waiting", nil, tag: 200)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Take a walk", action: #selector(runStroll), keyEquivalent: "")
-        menu.addItem(withTitle: "Have a nap", action: #selector(runNap), keyEquivalent: "")
-        menu.addItem(withTitle: "Chase a ball", action: #selector(runBall), keyEquivalent: "")
-        menu.addItem(withTitle: "Beg for food", action: #selector(runHungry), keyEquivalent: "")
-        menu.addItem(withTitle: "Ask to play", action: #selector(runPlay), keyEquivalent: "")
-        menu.addItem(withTitle: "Break some apps (crawler)", action: #selector(runCrawl), keyEquivalent: "")
-        menu.addItem(withTitle: "Crawl until I touch something", action: #selector(runIdleCrawl), keyEquivalent: "")
+        add(menu, "Pause", #selector(togglePause), tag: 100)
         menu.addItem(.separator())
-        let modes = NSMenu()
-        for (tag, title) in [(500, "Normal"), (501, "Crawler"), (502, "Zero Day (3 min hack, starts now)")] {
-            let item = NSMenuItem(title: title, action: #selector(pickMode(_:)), keyEquivalent: "")
-            item.tag = tag
-            item.target = self
-            modes.addItem(item)
+
+        let pet = submenu(menu, "Pet", tag: 810)
+        add(pet, "Cat", #selector(pickPet(_:)), tag: 800)
+        add(pet, "Dog", #selector(pickPet(_:)), tag: 801)
+        let mode = submenu(menu, "Mode", tag: 510)
+        add(mode, "Normal", #selector(pickMode(_:)), tag: 500)
+        add(mode, "Crawler (breaks windows, just paint)", #selector(pickMode(_:)), tag: 501)
+        let now = submenu(menu, "Play now", tag: 520)
+        add(now, "Take a walk", #selector(runStroll))
+        add(now, "Have a nap", #selector(runNap))
+        add(now, "Chase a ball", #selector(runBall))
+        add(now, "Beg for food", #selector(runHungry))
+        add(now, "Ask to play", #selector(runPlay))
+        now.addItem(.separator())
+        add(now, "Break some apps", #selector(runCrawl))
+        add(now, "Crawl until I touch something", #selector(runIdleCrawl))
+        add(now, "Zero Day (3 min hack)", #selector(pickMode(_:)), tag: 502)
+        menu.addItem(.separator())
+
+        let llm = submenu(menu, "LLM mode", tag: 710)
+        add(llm, "Answer what I copy or screenshot", #selector(toggleLLMMode), tag: 700)
+        add(llm, "Ask about what I copied now", #selector(askAboutClipboard))
+        llm.addItem(.separator())
+        add(llm, "Show answer box", #selector(toggleShowAnswers), tag: 702)
+        add(llm, "Copy answers to clipboard", #selector(toggleCopyAnswers), tag: 701)
+        llm.addItem(.separator())
+        add(llm, "Set API key…", #selector(setAPIKey))
+        add(llm, "Answers come from", nil, tag: 703)
+        menu.addItem(.separator())
+
+        add(menu, "Stepped out (Mac never sleeps)", #selector(toggleSteppedOut), tag: 600)
+        add(menu, "Show in screenshots & recordings", #selector(toggleCapture), tag: 300)
+        add(menu, "Open at login", #selector(toggleLogin), tag: 400)
+        menu.addItem(.separator())
+
+        add(menu, "Open playground", #selector(openPlayground))
+        let logs = submenu(menu, "Activity log", tag: 0)
+        add(logs, "Open today's log", #selector(openActivityLog))
+        add(logs, "Show all logs", #selector(showActivityLogs))
+        let settings = submenu(menu, "Settings", tag: 0)
+        add(settings, "Edit settings file…", #selector(editSettings))
+        add(settings, "Reload settings", #selector(reloadConfig))
+        menu.addItem(.separator())
+        add(menu, "Quit Screen Cat", #selector(quit), key: "q")
+
+        func target(_ menu: NSMenu) {
+            for item in menu.items {
+                if item.action != nil { item.target = self }
+                if let sub = item.submenu { target(sub) }
+            }
         }
-        let modeItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
-        modeItem.submenu = modes
-        menu.addItem(modeItem)
-        let llm = NSMenuItem(title: "LLM mode (answers what you copy or screenshot)",
-                             action: #selector(toggleLLMMode), keyEquivalent: "")
-        llm.tag = 700
-        menu.addItem(llm)
-        let copyAnswers = NSMenuItem(title: "Copy answers to clipboard",
-                                     action: #selector(toggleCopyAnswers), keyEquivalent: "")
-        copyAnswers.tag = 701
-        menu.addItem(copyAnswers)
-        let showAnswers = NSMenuItem(title: "Show answer box", action: #selector(toggleShowAnswers), keyEquivalent: "")
-        showAnswers.tag = 702
-        menu.addItem(showAnswers)
-        menu.addItem(withTitle: "Ask about what I copied", action: #selector(askAboutClipboard), keyEquivalent: "")
-        menu.addItem(withTitle: "Open playground", action: #selector(openPlayground), keyEquivalent: "")
-        menu.addItem(.separator())
-        let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
-        pauseItem.tag = 100
-        menu.addItem(pauseItem)
-        let stepped = NSMenuItem(title: "Stepped out (Mac never sleeps)",
-                                 action: #selector(toggleSteppedOut), keyEquivalent: "")
-        stepped.tag = 600
-        menu.addItem(stepped)
-        menu.addItem(.separator())
-        let capture = NSMenuItem(title: "Show in screenshots & recordings",
-                                 action: #selector(toggleCapture), keyEquivalent: "")
-        capture.tag = 300
-        menu.addItem(capture)
-        let login = NSMenuItem(title: "Open at login", action: #selector(toggleLogin), keyEquivalent: "")
-        login.tag = 400
-        menu.addItem(login)
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Open today's activity log", action: #selector(openActivityLog), keyEquivalent: "")
-        menu.addItem(withTitle: "Show all activity logs", action: #selector(showActivityLogs), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Edit settings…", action: #selector(editSettings), keyEquivalent: "")
-        menu.addItem(withTitle: "Reload settings", action: #selector(reloadConfig), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Screen Cat", action: #selector(quit), keyEquivalent: "q")
-        for item in menu.items where item.action != nil { item.target = self }
+        target(menu)
         statusItem.menu = menu
     }
 
-    /// Refresh the top line each time the menu opens, so it is obvious why the
-    /// cat is or is not showing up.
-    func menuWillOpen(_ menu: NSMenu) {
-        scene.config = Config.load()
-        menu.item(withTag: 300)?.state = scene.config.hideFromCapture ? .off : .on
-        menu.item(withTag: 400)?.state = LoginItem.isEnabled ? .on : .off
-        menu.item(withTag: 600)?.state = StayAwake.isOn ? .on : .off
-        menu.item(withTag: 700)?.state = scene.config.llmMode ? .on : .off
-        menu.item(withTag: 701)?.state = scene.config.llmCopyAnswer ? .on : .off
-        menu.item(withTag: 702)?.state = scene.config.llmShowAnswer ? .on : .off
-        if let modes = menu.items.first(where: { $0.title == "Mode" })?.submenu {
-            modes.item(withTag: 500)?.state = scene.config.mode == "crawler" ? .off : .on
-            modes.item(withTag: 501)?.state = scene.config.mode == "crawler" ? .on : .off
+    /// Finds an item by tag anywhere in the menu, submenus included.
+    private func menuItem(_ tag: Int, in menu: NSMenu? = nil) -> NSMenuItem? {
+        for item in (menu ?? statusItem.menu)?.items ?? [] {
+            if item.tag == tag { return item }
+            if let sub = item.submenu, let found = menuItem(tag, in: sub) { return found }
         }
-        guard let item = menu.item(withTag: 200) else { return }
+        return nil
+    }
+
+    /// Refresh the ticks and the top line each time the menu opens, so it is
+    /// obvious why the pet is or is not showing up.
+    func menuWillOpen(_ menu: NSMenu) {
+        let c = Config.load()
+        scene.config = c
+        func tick(_ tag: Int, _ on: Bool) { menuItem(tag)?.state = on ? .on : .off }
+        tick(300, !c.hideFromCapture)
+        tick(400, LoginItem.isEnabled)
+        tick(600, StayAwake.isOn)
+        tick(700, c.llmMode)
+        tick(701, c.llmCopyAnswer)
+        tick(702, c.llmShowAnswer)
+        tick(500, c.mode != "crawler")
+        tick(501, c.mode == "crawler")
+        tick(800, c.pet == "cat")
+        tick(801, c.pet == "dog")
+        // The submenu titles carry the current choice, so the menu reads at
+        // a glance without opening each one.
+        menuItem(810)?.title = "Pet: \(c.pet == "dog" ? "Dog" : "Cat")"
+        menuItem(510)?.title = "Mode: \(c.mode == "crawler" ? "Crawler" : "Normal")"
+        menuItem(710)?.title = "LLM mode: \(c.llmMode ? "On" : "Off")"
+        menuItem(703)?.title = APIKey.isSet ? "Answers come from your API key" : "Answers come from your Claude Code login"
+        menuItem(703)?.isEnabled = false
+        guard let item = menuItem(200) else { return }
+        item.isEnabled = false
         if paused {
             item.title = "Paused"
         } else if away {
             item.title = "Away while the screen is off"
-        } else if let why = Watching.reason(scene.config, screen: targetScreen()) {
+        } else if let why = Watching.reason(c, screen: targetScreen()) {
             item.title = why.prefix(1).uppercased() + why.dropFirst()
         } else if behavior != nil {
             item.title = "Out and about"
@@ -523,6 +578,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         playground?.show()
     }
 
+    /// Cat or dog, saved, and swapped in at once, even mid-walk.
+    @objc private func pickPet(_ sender: NSMenuItem) {
+        let pet = sender.tag == 801 ? "dog" : "cat"
+        scene.config.pet = pet
+        Config.update("pet", to: pet)
+        loadSprites()
+        view.needsDisplay = true
+        ActivityLog.shared.cat("pet set to \(pet)")
+    }
+
+    /// Paste your own Anthropic API key. It goes in the keychain. With it,
+    /// answers come from the Claude API; without it, from Claude Code.
+    @objc private func setAPIKey() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Anthropic API key"
+        alert.informativeText = """
+        With a key, LLM mode calls the Claude API directly, and you pay Anthropic for what you use. \
+        Without one, it uses the claude command (Claude Code) and its login. \
+        The key is kept in your Mac's keychain, not in the settings file. Get one at console.anthropic.com.
+        """
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        field.placeholderString = APIKey.isSet ? "A key is saved. Paste a new one to replace it." : "sk-ant-..."
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        if APIKey.isSet { alert.addButton(withTitle: "Remove key") }
+        alert.window.initialFirstResponder = field
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let key = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { return }
+            if APIKey.save(key) {
+                ActivityLog.shared.cat("llm: api key saved")
+            } else {
+                NSSound.beep()
+            }
+        case .alertThirdButtonReturn:
+            APIKey.delete()
+            ActivityLog.shared.cat("llm: api key removed")
+        default:
+            break
+        }
+    }
+
     @objc private func togglePause(_ sender: NSMenuItem) {
         paused.toggle()
         sender.title = paused ? "Resume" : "Pause"
@@ -687,9 +787,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// The cat, a cup while the Mac is kept awake, then the answer badge.
+    /// The pet, a cup while the Mac is kept awake, then the answer badge.
+    /// Falls back to an emoji if the sprites did not load.
     private func refreshStatusTitle() {
-        statusItem.button?.title = "🐈" + (StayAwake.isOn ? "☕" : "") + badge
+        guard let button = statusItem?.button else { return }
+        button.image = menuIcon
+        let extras = (StayAwake.isOn ? "☕" : "") + badge
+        button.title = menuIcon == nil ? "🐈" + extras : extras
     }
 
     /// Sends the sitting cat off and drops any answer still coming.
@@ -1119,6 +1223,11 @@ final class OverlayContainer: NSView {
 // checking the artwork without waiting for the cat to wander past.
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--preview" {
     renderPreviewSheet(to: CommandLine.arguments[2])
+    exit(0)
+}
+
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--app-icon" {
+    renderAppIcon(to: CommandLine.arguments[2])
     exit(0)
 }
 

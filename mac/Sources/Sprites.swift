@@ -68,7 +68,23 @@ final class SpriteSheet {
     private var rawWidth = 0
     private var accessoryFrames: [Int: CGImage] = [:]
 
-    init(resources: URL, palette: SpritePalette) {
+    /// The pet the settings ask for, in the settings' colours.
+    convenience init(resources: URL, config: Config) {
+        self.init(resources: resources, palette: config.spritePalette, pet: config.pet)
+    }
+
+    init(resources: URL, palette: SpritePalette, pet: String = "cat") {
+        // The dog is drawn in its own colours. Only its eyes are recoloured:
+        // they are pure white in the file, the same as the cat's, so the
+        // glasses and chain can find the face.
+        let dogSheet = resources.appendingPathComponent("Dog_Sprite_Sheet.png")
+        if pet == "dog", FileManager.default.fileExists(atPath: dogSheet.path) {
+            sheet = SpriteSheet.load(dogSheet, recolour: [SpritePalette.srcEye: SpritePalette.dogEye])
+            ball = SpriteSheet.load(resources.appendingPathComponent("Dog_Ball.png"), recolour: [:])
+            shadow = SpriteSheet.load(resources.appendingPathComponent("Cat_Shadow.png"), recolour: [:])
+            loadRaw(dogSheet)
+            return
+        }
         // The sheet gets the coat mapping only. The yarn colours are left alone
         // there because the cat's nose and mouth are drawn in them too, and
         // tinting those turns its face the colour of the ball.
@@ -131,6 +147,41 @@ final class SpriteSheet {
 
     var isLoaded: Bool { sheet != nil }
 
+    /// The menu bar icon: the first sitting frame as a template silhouette,
+    /// with the eyes cut out so it reads as a face. Pixel-exact at 2x, so it
+    /// stays crisp. macOS tints it to match the menu bar.
+    func menuBarIcon() -> NSImage? {
+        guard !raw.isEmpty else { return nil }
+        let s = SpriteSheet.frameSize
+        let info = Clip.sitIdle.info
+        func px(_ x: Int, _ y: Int) -> (a: UInt8, eye: Bool) {
+            let i = ((info.row * s + y) * rawWidth + info.start * s + x) * 4
+            let eye = raw[i] == 255 && raw[i + 1] == 255 && raw[i + 2] == 255
+            return (raw[i + 3], eye)
+        }
+        var minX = s, maxX = -1, minY = s, maxY = -1
+        for y in 0..<s { for x in 0..<s where px(x, y).a > 0 {
+            minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+        } }
+        guard maxX >= 0 else { return nil }
+        let w = maxX - minX + 1, h = maxY - minY + 1
+        // Two image pixels per sprite pixel on a 2x screen: about 14pt tall.
+        let scale = max(1, 36 / h)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w * scale, pixelsHigh: h * scale,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        for y in 0..<h { for x in 0..<w {
+            let p = px(minX + x, minY + y)
+            let alpha = p.eye ? 0 : (p.a > 0 ? 1.0 : 0)
+            let colour = NSColor(deviceRed: 0, green: 0, blue: 0, alpha: alpha)
+            for dy in 0..<scale { for dx in 0..<scale { rep.setColor(colour, atX: x * scale + dx, y: y * scale + dy) } }
+        } }
+        let image = NSImage(size: NSSize(width: CGFloat(w * scale) / 2, height: CGFloat(h * scale) / 2))
+        image.addRepresentation(rep)
+        image.isTemplate = true
+        return image
+    }
+
     /// Frame `index` of `clip`, cropped out of the sheet and cached.
     func frame(_ clip: Clip, _ index: Int) -> CGImage? {
         guard let sheet else { return nil }
@@ -192,6 +243,8 @@ struct SpritePalette {
     static let srcEye: UInt32     = 0xFFFFFF   // eyes
     static let srcYarnA: UInt32   = 0xBC4A9B   // yarn ball
     static let srcYarnB: UInt32   = 0xD25A87   // yarn ball highlight
+    /// What the dog's white eye pixels turn into: near black.
+    static let dogEye: UInt32     = 0x1B1220
 
     /// Coat, ears and eyes. Applied to the sheet.
     var coat: [UInt32: UInt32]

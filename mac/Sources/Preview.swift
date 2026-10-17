@@ -4,7 +4,7 @@ import AppKit
 /// at a glance. Not used at runtime.
 func renderPreviewSheet(to path: String) {
     let cfg = Config.load()
-    let sheet = SpriteSheet(resources: resourcesDirectory(), palette: cfg.spritePalette)
+    let sheet = SpriteSheet(resources: resourcesDirectory(), config: cfg)
     guard sheet.isLoaded else {
         FileHandle.standardError.write(Data("could not load sprites from \(resourcesDirectory().path)\n".utf8))
         return
@@ -134,4 +134,77 @@ func renderGlitchSheet(to path: String) {
         try? data.write(to: URL(fileURLWithPath: path))
         print("wrote \(path)")
     }
+}
+
+/// `--app-icon <dir.iconset>`: the app icon at every size macOS asks for. The
+/// purple cat in its shades and gold chain, sitting on a night-purple tile.
+/// `iconutil -c icns` turns the folder into Assets/AppIcon.icns.
+func renderAppIcon(to dir: String) {
+    let cfg = Config()
+    let sheet = SpriteSheet(resources: resourcesDirectory(), config: cfg)
+    guard sheet.isLoaded, let master = drawAppIcon(sheet: sheet, palette: cfg.extras) else {
+        FileHandle.standardError.write(Data("could not draw the icon\n".utf8))
+        return
+    }
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    for base in [16, 32, 128, 256, 512] {
+        for scale in [1, 2] {
+            let px = base * scale
+            let name = "icon_\(base)x\(base)\(scale == 2 ? "@2x" : "").png"
+            guard let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { continue }
+            ctx.interpolationQuality = .high
+            ctx.draw(master, in: CGRect(x: 0, y: 0, width: px, height: px))
+            guard let image = ctx.makeImage() else { continue }
+            let rep = NSBitmapImageRep(cgImage: image)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
+        }
+    }
+    print("wrote \(dir)")
+}
+
+private func drawAppIcon(sheet: SpriteSheet, palette: Palette) -> CGImage? {
+    let side = 1024
+    guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                              space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    // The macOS tile: 824 points square, inset 100, with the standard corner.
+    let tile = CGRect(x: 100, y: 100, width: 824, height: 824)
+    let shape = CGPath(roundedRect: tile, cornerWidth: 185, cornerHeight: 185, transform: nil)
+    ctx.saveGState()
+    ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: NSColor(white: 0, alpha: 0.35).cgColor)
+    ctx.addPath(shape)
+    ctx.setFillColor(NSColor(hex: "#2E1B47")!.cgColor)
+    ctx.fillPath()
+    ctx.restoreGState()
+
+    ctx.saveGState()
+    ctx.addPath(shape)
+    ctx.clip()
+    let colours = [NSColor(hex: "#1A0F2E")!.cgColor, NSColor(hex: "#4B2C7A")!.cgColor] as CFArray
+    if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colours, locations: [0, 1]) {
+        ctx.drawLinearGradient(gradient, start: CGPoint(x: 512, y: 100), end: CGPoint(x: 512, y: 924), options: [])
+    }
+    // A soft glow behind the cat, and a floor line it sits on.
+    let glow = [NSColor(hex: "#B48CF0")!.withAlphaComponent(0.55).cgColor,
+                NSColor(hex: "#B48CF0")!.withAlphaComponent(0).cgColor] as CFArray
+    if let radial = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: glow, locations: [0, 1]) {
+        ctx.drawRadialGradient(radial, startCenter: CGPoint(x: 512, y: 470), startRadius: 0,
+                               endCenter: CGPoint(x: 512, y: 470), endRadius: 380, options: [])
+    }
+    ctx.setFillColor(NSColor(hex: "#120A20")!.withAlphaComponent(0.6).cgColor)
+    ctx.fill(CGRect(x: 100, y: 100, width: 824, height: 150))
+    ctx.restoreGState()
+
+    // The cat itself, drawn by the app's own renderer: 20 screen pixels per
+    // sprite pixel, so it stays crisp pixel art.
+    let cat = CatState()
+    cat.clip = .sitIdle
+    cat.size = SpriteSheet.standHeight * 20
+    cat.pos = CGPoint(x: 530, y: 250)
+    cat.wearing = [.chain, .glasses]
+    drawCat(cat, sheet: sheet, drawShadow: true, palette: palette, in: ctx)
+    return ctx.makeImage()
 }

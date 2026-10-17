@@ -80,6 +80,9 @@ struct Config {
     var petSeconds: CGFloat = 1.0
 
     // Look ---------------------------------------------------------------
+    /// "cat" or "dog". The colour settings below recolour the cat; the dog
+    /// keeps its own coat.
+    var pet = "cat"
     var furColor = "#A87BE0"
     var furShadeColor = "#7E52B3"
     var outlineColor = "#2E1B47"
@@ -180,6 +183,7 @@ struct Config {
         func strs(_ key: String) -> [String]? { raw[key] as? [String] }
 
         c.sizeDivisor           = num("sizeDivisor")           ?? c.sizeDivisor
+        c.pet                   = str("pet")                   ?? c.pet
         c.firstAppearanceDelay  = num("firstAppearanceDelay")  ?? c.firstAppearanceDelay
         c.minGapSeconds         = num("minGapSeconds")         ?? c.minGapSeconds
         c.maxGapSeconds         = num("maxGapSeconds")         ?? c.maxGapSeconds
@@ -244,6 +248,7 @@ struct Config {
         c.opacity               = num("opacity")               ?? c.opacity
 
         c.sizeDivisor = max(2, min(60, c.sizeDivisor))
+        if !["cat", "dog"].contains(c.pet) { c.pet = "cat" }
         c.roamHeight = max(0.05, min(1, c.roamHeight))
         c.groundBias = max(1, min(8, c.groundBias))
         c.maxSlope = max(0, min(2, c.maxSlope))
@@ -294,6 +299,7 @@ struct Config {
         let d = Config()
         let dict: [String: Any] = [
             "sizeDivisor": d.sizeDivisor,
+            "pet": d.pet,
             "firstAppearanceDelay": d.firstAppearanceDelay,
             "minGapSeconds": d.minGapSeconds,
             "maxGapSeconds": d.maxGapSeconds,
