@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 
 VERSION="${VERSION:-1.1.0}"
 export VERSION
-./build.sh
+UNIVERSAL=1 ./build.sh
 
 mkdir -p dist
 ZIP="dist/ScreenCat-mac-$VERSION.zip"

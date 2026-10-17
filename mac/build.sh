@@ -9,7 +9,17 @@ BIN="$APP/Contents/MacOS/ScreenCat"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-swiftc -O -o "$BIN" Sources/*.swift 2>&1 | grep -v "^$" || true
+if [ "${UNIVERSAL:-0}" = "1" ]; then
+  # One binary for Apple silicon and Intel Macs, for releases.
+  TMP="$(mktemp -d)"
+  for arch in arm64 x86_64; do
+    swiftc -O -target "$arch-apple-macos12" -o "$TMP/ScreenCat-$arch" Sources/*.swift 2>&1 | grep -v "^$" || true
+  done
+  lipo -create -output "$BIN" "$TMP/ScreenCat-arm64" "$TMP/ScreenCat-x86_64" 2>/dev/null || true
+  rm -rf "$TMP"
+else
+  swiftc -O -o "$BIN" Sources/*.swift 2>&1 | grep -v "^$" || true
+fi
 if [ ! -x "$BIN" ]; then
   echo "build failed" >&2
   exit 1
