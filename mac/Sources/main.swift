@@ -244,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         view.sheet = sheet
+        scene.cat.isDog = c.pet == "dog"
         loadedPaletteKey = key
         menuIcon = sheet.menuBarIcon()
         refreshStatusTitle()

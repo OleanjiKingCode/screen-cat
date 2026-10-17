@@ -125,6 +125,7 @@ final class PlaygroundView: NSView {
         c.groundBias = 2
         scene.config = c
         sheet = SpriteSheet(resources: resourcesDirectory(), config: c)
+        scene.cat.isDog = c.pet == "dog"
         super.init(frame: frame)
         layoutStage()
     }

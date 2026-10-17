@@ -22,6 +22,7 @@ func runSimulation(routine: Routine, to path: String) {
     let scene = Scene()
     scene.config = cfg
     scene.cat.size = max(24, stage.height / cfg.sizeDivisor)
+    scene.cat.isDog = cfg.pet == "dog"
     scene.setStage(surface: surface, screen: stage, catSize: scene.cat.size)
 
     let window = makeOverlayWindow(frame: stage)
