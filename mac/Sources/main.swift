@@ -337,7 +337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         let llm = submenu(menu, "LLM mode", tag: 710)
-        add(llm, "Answer what I copy or screenshot", #selector(toggleLLMMode), tag: 700)
+        add(llm, Self.llmModeTitle(false), #selector(toggleLLMMode), tag: 700)
         add(llm, "Ask about what I copied now", #selector(askAboutClipboard))
         llm.addItem(.separator())
         add(llm, "Show answer box", #selector(toggleShowAnswers), tag: 702)
@@ -390,7 +390,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tick(300, !c.hideFromCapture)
         tick(400, LoginItem.isEnabled)
         tick(600, StayAwake.isOn)
-        tick(700, c.llmMode)
         tick(701, c.llmCopyAnswer)
         tick(702, c.llmShowAnswer)
         tick(500, c.mode != "crawler")
@@ -402,6 +401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menuItem(810)?.title = "Pet: \(c.pet == "dog" ? "Dog" : "Cat")"
         menuItem(510)?.title = "Mode: \(c.mode == "crawler" ? "Crawler" : "Normal")"
         menuItem(710)?.title = "LLM mode: \(c.llmMode ? "On" : "Off")"
+        menuItem(700)?.title = Self.llmModeTitle(c.llmMode)
         menuItem(703)?.title = APIKey.isSet ? "Answers come from your API key" : "Answers come from your Claude Code login"
         menuItem(703)?.isEnabled = false
         guard let item = menuItem(200) else { return }
@@ -666,11 +666,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - LLM mode
 
+    /// Says what clicking it will do, so turning the mode off is obvious.
+    private static func llmModeTitle(_ on: Bool) -> String {
+        on ? "Turn LLM mode off" : "Turn LLM mode on (answer what I copy or screenshot)"
+    }
+
     @objc private func toggleLLMMode(_ sender: NSMenuItem) {
         scene.config.llmMode.toggle()
         Config.update("llmMode", to: scene.config.llmMode)
         applyLLMMode()
-        sender.state = scene.config.llmMode ? .on : .off
+        sender.title = Self.llmModeTitle(scene.config.llmMode)
     }
 
     /// Ticked, each answer goes on the clipboard as it arrives, ready to paste.
