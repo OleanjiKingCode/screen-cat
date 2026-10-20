@@ -135,9 +135,6 @@ struct Config {
     var llmModel = "claude-opus-5-5"
     /// How hard Claude thinks: "low", "medium", "high", "xhigh" or "max".
     var llmEffort = "medium"
-    /// Close the answer this long after it arrives, unless the pointer is on
-    /// it. 0 keeps it up until you close it.
-    var llmAnswerSeconds: CGFloat = 120
     /// Full path to `claude`, if it is not in one of the usual places.
     var llmClaudePath = ""
 
@@ -240,7 +237,6 @@ struct Config {
         c.llmShowAnswer         = bool("llmShowAnswer")        ?? c.llmShowAnswer
         c.llmModel              = str("llmModel")              ?? c.llmModel
         c.llmEffort             = str("llmEffort")             ?? c.llmEffort
-        c.llmAnswerSeconds      = num("llmAnswerSeconds")      ?? c.llmAnswerSeconds
         c.llmClaudePath         = str("llmClaudePath")         ?? c.llmClaudePath
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
@@ -272,7 +268,6 @@ struct Config {
         c.zeroDaySpeed = max(1, min(16, c.zeroDaySpeed))
         c.zeroDayVolume = max(0, min(1, c.zeroDayVolume))
         c.growScale = max(1, min(4, c.growScale))
-        c.llmAnswerSeconds = max(0, c.llmAnswerSeconds)
         if !["low", "medium", "high", "xhigh", "max"].contains(c.llmEffort) { c.llmEffort = "medium" }
         c.chainChance = max(0, min(1, c.chainChance))
         c.glassesChance = max(0, min(1, c.glassesChance))
@@ -356,7 +351,6 @@ struct Config {
             "llmShowAnswer": d.llmShowAnswer,
             "llmModel": d.llmModel,
             "llmEffort": d.llmEffort,
-            "llmAnswerSeconds": d.llmAnswerSeconds,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,

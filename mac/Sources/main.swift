@@ -279,7 +279,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !away else { return }
         if behavior is IdleCrawlBehavior { endIdleCrawl(reason: "screen went off") }
         away = true
-        stopBehavior()
+        // An answer stays up until you close it, so it is still there when
+        // the screen comes back. Anything else goes home.
+        if !(behavior is AskBehavior) { stopBehavior() }
         scheduleTimer?.invalidate()
         scheduleTimer = nil
         nextVisitAt = nil
@@ -288,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func comeBack() {
         guard away else { return }
         away = false
-        if !paused { schedule(after: scene.config.firstAppearanceDelay) }
+        if !paused && behavior == nil { schedule(after: scene.config.firstAppearanceDelay) }
     }
 
     // MARK: - Menu bar
@@ -747,12 +749,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ActivityLog.shared.cat("llm: answered in \(took)")
                 self.lastAnswer = text
                 self.conversation = history + [Turn(question: question, answer: text)]
-                panel.showAnswer(text, closeAfter: c.llmAnswerSeconds)
+                panel.showAnswer(text)
                 // Through the card's own copy, so the watcher knows it is ours.
                 if c.llmCopyAnswer { panel.copyAnswer() }
             case .failed(let why):
                 ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
-                panel.showError(why, closeAfter: c.llmAnswerSeconds)
+                panel.showError(why)
             }
         }
     }

@@ -6,7 +6,7 @@ import AppKit
 /// follows the same screenshot setting as the cat, until you click into the
 /// follow-up field under an answer to ask more.
 final class AnswerPanel: NSPanel, NSTextFieldDelegate {
-    /// The card was closed by you or timed out. Not called by `dismiss()`.
+    /// The card was closed by you, with ✕ or Esc. Not called by `dismiss()`.
     var onClose: (() -> Void)?
     /// The answer was put on the clipboard, by the button or automatically.
     var onCopy: (() -> Void)?
@@ -27,8 +27,6 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     private var scrollToReply: NSLayoutConstraint!
     private var dots = 0
     private var thinkingTimer: Timer?
-    private var closeTimer: Timer?
-    private var secondsLeft: CGFloat = 0
     private var anchor = CGPoint.zero
     private var area = CGRect.zero
 
@@ -155,7 +153,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     func showThinking(_ question: Question, above anchor: CGPoint, within screen: CGRect) {
         self.anchor = anchor
         area = screen
-        stopTimers()
+        thinkingTimer?.invalidate()
         answer = ""
         copyButton.isHidden = true
         showReply(false)
@@ -178,31 +176,28 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         orderFrontRegardless()
     }
 
-    /// The answer, and a countdown to close it. Resting the pointer on the
-    /// card holds the countdown, so it never vanishes while you read.
-    func showAnswer(_ text: String, closeAfter seconds: CGFloat) {
-        stopTimers()
+    /// The answer. It stays up until you close it, however long you read.
+    func showAnswer(_ text: String) {
+        thinkingTimer?.invalidate()
         answer = text
         heading.stringValue = "ANSWER"
         copyButton.isHidden = false
         showReply(true)
         setBody(text, color: ink)
-        startCloseTimer(seconds)
     }
 
-    func showError(_ text: String, closeAfter seconds: CGFloat) {
-        stopTimers()
+    func showError(_ text: String) {
+        thinkingTimer?.invalidate()
         answer = ""
         heading.stringValue = "NO ANSWER"
         copyButton.isHidden = true
         showReply(true)
         setBody(text, color: NSColor(srgbRed: 0.7, green: 0.12, blue: 0.2, alpha: 1))
-        startCloseTimer(seconds)
     }
 
     /// Takes the card away without telling anyone: the cat is already going.
     func dismiss() {
-        stopTimers()
+        thinkingTimer?.invalidate()
         reply.stringValue = ""
         orderOut(nil)
     }
@@ -225,10 +220,6 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         onFollowUp?(text)
     }
 
-    /// Typing a follow-up holds the countdown, like resting the pointer.
-    private var isReplying: Bool {
-        (isKeyWindow && reply.currentEditor() != nil) || !reply.stringValue.isEmpty
-    }
 
     @objc private func closeByUser() {
         dismiss()
@@ -284,23 +275,5 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         var y = anchor.y + 8
         y = min(y, room.maxY - height)
         setFrame(CGRect(x: x, y: y, width: Self.width, height: height), display: true)
-    }
-
-    private func startCloseTimer(_ seconds: CGFloat) {
-        guard seconds > 0 else { return }
-        secondsLeft = seconds
-        closeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            if self.frame.contains(NSEvent.mouseLocation) || self.isReplying { return }
-            self.secondsLeft -= 1
-            if self.secondsLeft <= 0 { self.closeByUser() }
-        }
-    }
-
-    private func stopTimers() {
-        thinkingTimer?.invalidate()
-        thinkingTimer = nil
-        closeTimer?.invalidate()
-        closeTimer = nil
     }
 }
