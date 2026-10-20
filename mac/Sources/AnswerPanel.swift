@@ -3,12 +3,15 @@ import AppKit
 /// The card the cat sits under in LLM mode, with the answer in it. A small
 /// floating panel rather than paint on the overlay, so the text can be
 /// selected, scrolled and copied. It never takes focus from your app, and it
-/// follows the same screenshot setting as the cat.
-final class AnswerPanel: NSPanel {
+/// follows the same screenshot setting as the cat, until you click into the
+/// follow-up field under an answer to ask more.
+final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     /// The card was closed by you or timed out. Not called by `dismiss()`.
     var onClose: (() -> Void)?
     /// The answer was put on the clipboard, by the button or automatically.
     var onCopy: (() -> Void)?
+    /// Typed into the field under the answer and sent with Enter or ASK.
+    var onFollowUp: ((String) -> Void)?
     private(set) var answer = ""
 
     private static let width: CGFloat = 380
@@ -18,6 +21,10 @@ final class AnswerPanel: NSPanel {
     private let textView = NSTextView()
     private let scroll = NSScrollView()
     private let copyButton = NSButton()
+    private let reply = NSTextField()
+    private let askButton = NSButton()
+    private var scrollToCard: NSLayoutConstraint!
+    private var scrollToReply: NSLayoutConstraint!
     private var dots = 0
     private var thinkingTimer: Timer?
     private var closeTimer: Timer?
@@ -49,6 +56,28 @@ final class AnswerPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func cancelOperation(_ sender: Any?) { closeByUser() }
+
+    /// The cat has no Edit menu, so Cmd+X, C, V and A are wired up here for
+    /// the answer and the follow-up field.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let actions: [String: Selector] = [
+            "x": #selector(NSText.cut(_:)), "c": #selector(NSText.copy(_:)),
+            "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
+        ]
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           let action = event.charactersIgnoringModifiers.flatMap({ actions[$0] }),
+           NSApp.sendAction(action, to: nil, from: self) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    /// Esc in the field closes the card, as it does everywhere else on it.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        closeByUser()
+        return true
+    }
 
     /// The cat's speech bubble, grown up: off-white with a chunky outline.
     private func buildContent() {
@@ -85,7 +114,17 @@ final class AnswerPanel: NSPanel {
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
 
-        for v in [heading, copyButton, close, scroll] {
+        reply.placeholderString = "Ask a follow-up…"
+        reply.font = .systemFont(ofSize: 13)
+        reply.bezelStyle = .roundedBezel
+        reply.delegate = self
+        reply.target = self
+        reply.action = #selector(sendFollowUp)
+        askButton.target = self
+        askButton.action = #selector(sendFollowUp)
+        label(askButton, "ASK")
+
+        for v in [heading, copyButton, close, scroll, reply, askButton] {
             v.translatesAutoresizingMaskIntoConstraints = false
             card.addSubview(v)
         }
@@ -99,8 +138,16 @@ final class AnswerPanel: NSPanel {
             scroll.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
             scroll.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
             scroll.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 10),
-            scroll.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+            reply.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            reply.trailingAnchor.constraint(equalTo: askButton.leadingAnchor, constant: -8),
+            reply.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+            askButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
+            askButton.centerYAnchor.constraint(equalTo: reply.centerYAnchor),
         ])
+        // The text runs down to the field when it shows, else to the edge.
+        scrollToCard = scroll.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14)
+        scrollToReply = scroll.bottomAnchor.constraint(equalTo: reply.topAnchor, constant: -10)
+        showReply(false)
     }
 
     /// Shows the card above `anchor` (a global point, the top of the cat's
@@ -111,9 +158,10 @@ final class AnswerPanel: NSPanel {
         stopTimers()
         answer = ""
         copyButton.isHidden = true
+        showReply(false)
         let asked: String
         switch question {
-        case .text(let s):
+        case .text(let s), .followUp(let s):
             let line = s.replacingOccurrences(of: "\n", with: " ")
             asked = line.count > 160 ? String(line.prefix(160)) + "…" : line
         case .image(_, let from):
@@ -137,6 +185,7 @@ final class AnswerPanel: NSPanel {
         answer = text
         heading.stringValue = "ANSWER"
         copyButton.isHidden = false
+        showReply(true)
         setBody(text, color: ink)
         startCloseTimer(seconds)
     }
@@ -146,6 +195,7 @@ final class AnswerPanel: NSPanel {
         answer = ""
         heading.stringValue = "NO ANSWER"
         copyButton.isHidden = true
+        showReply(true)
         setBody(text, color: NSColor(srgbRed: 0.7, green: 0.12, blue: 0.2, alpha: 1))
         startCloseTimer(seconds)
     }
@@ -153,7 +203,31 @@ final class AnswerPanel: NSPanel {
     /// Takes the card away without telling anyone: the cat is already going.
     func dismiss() {
         stopTimers()
+        reply.stringValue = ""
         orderOut(nil)
+    }
+
+    /// The field shows under an answer, not while one is on its way. Once
+    /// you have clicked into it, it keeps the focus for the next follow-up.
+    private func showReply(_ shown: Bool) {
+        if !shown, reply.currentEditor() != nil { makeFirstResponder(nil) }
+        reply.isHidden = !shown
+        askButton.isHidden = !shown
+        NSLayoutConstraint.deactivate([shown ? scrollToCard : scrollToReply])
+        NSLayoutConstraint.activate([shown ? scrollToReply : scrollToCard])
+        if shown, isKeyWindow { makeFirstResponder(reply) }
+    }
+
+    @objc private func sendFollowUp() {
+        let text = reply.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        reply.stringValue = ""
+        onFollowUp?(text)
+    }
+
+    /// Typing a follow-up holds the countdown, like resting the pointer.
+    private var isReplying: Bool {
+        (isKeyWindow && reply.currentEditor() != nil) || !reply.stringValue.isEmpty
     }
 
     @objc private func closeByUser() {
@@ -199,7 +273,8 @@ final class AnswerPanel: NSPanel {
         container.containerSize = CGSize(width: textWidth, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
         let textHeight = min(Self.maxTextHeight, max(18, ceil(layout.usedRect(for: container).height)))
-        let height = textHeight + 12 + 16 + 10 + 14
+        let replyHeight = reply.isHidden ? 0 : reply.intrinsicContentSize.height + 10
+        let height = textHeight + 12 + 16 + 10 + 14 + replyHeight
         // No screen given yet: use the main one, never an empty rect, which
         // AppKit rejects as a window frame.
         let given = area.width > 24 && area.height > 24 ? area : (NSScreen.main?.visibleFrame ?? .zero)
@@ -216,7 +291,7 @@ final class AnswerPanel: NSPanel {
         secondsLeft = seconds
         closeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            if self.frame.contains(NSEvent.mouseLocation) { return }
+            if self.frame.contains(NSEvent.mouseLocation) || self.isReplying { return }
             self.secondsLeft -= 1
             if self.secondsLeft <= 0 { self.closeByUser() }
         }

@@ -162,6 +162,15 @@ and the cat walks off. Otherwise it closes `llmAnswerSeconds` (120) after the
 answer arrives, but never while the pointer is on it. You can drag the card.
 A new question while the cat is sitting reuses the same card.
 
+**Follow-ups.** Under each answer is an "Ask a follow-up…" field. Click it,
+type a question about the answer or a request ("shorter", "explain step 2",
+"in French") and press Enter or **ASK**. Claude gets the conversation so far,
+the first copy or screenshot included, and the new answer replaces the old one
+on the card. Keep going as long as you like. While the field has the focus or
+has text in it, the card does not time out. A new copy or screenshot starts a
+fresh conversation, and closing the card forgets it. The card only takes the
+keyboard when you click into the field, and your app stays in front.
+
 **Show answer box** (`llmShowAnswer`, on by default) controls the cat and the
 card. Untick it and neither appears: each answer goes straight to the
 clipboard, whatever **Copy answers to clipboard** says, and the cat in the menu
