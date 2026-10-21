@@ -64,7 +64,7 @@ Needs macOS 12 or later, Apple silicon or Intel.
 
 ## LLM mode
 
-Open the menu and go to **LLM mode > Answer what I copy or screenshot**. From then on:
+Open the menu and go to **LLM mode > Turn LLM mode on**. From then on (until you choose **Turn LLM mode off**):
 
 - **Copy** any text (a question, an equation, a claim, a word, an error message) and the pet walks on with a card: THINKING, then the answer.
 - **Take a screenshot** (Cmd+Shift+4) and it answers what is in it. Add Control (Cmd+Ctrl+Shift+4) to copy the screenshot instead, which it picks up instantly.

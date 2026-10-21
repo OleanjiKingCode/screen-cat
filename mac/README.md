@@ -149,9 +149,9 @@ Render it headless with `--playground out.png [seconds]`.
 
 ## LLM mode
 
-Tick **LLM mode (answers what you copy or screenshot)** in the menu. From then
-on, whatever you copy, and every screenshot you take, goes to Claude. The cat
-walks on, sits, and holds up a card: "THINKING..." with what you asked, then
+Choose **LLM mode > Turn LLM mode on** in the menu (**Turn LLM mode off** to
+stop). From then on, whatever you copy, and every screenshot you take, goes to
+Claude. The cat walks on, sits, and holds up a card: "THINKING..." with what you asked, then
 the answer. It works out what you want: a question gets answered, an equation
 or sum gets solved with the steps, a claim gets checked, a word gets explained,
 code or an error gets explained or fixed. The answer is plain text you can
