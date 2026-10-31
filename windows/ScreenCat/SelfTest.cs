@@ -20,7 +20,13 @@ namespace ScreenCat;
 ///  - the overlay window can be made and updated, and capture exclusion is
 ///    accepted (reported, not failed, since CI has no real desktop).
 ///
-/// Writes preview.png, glitches.png, takeover.png, trail.png and report.txt.
+///  - the dog loads with its own art, and the face is found for its outfit;
+///  - LLM mode reads Claude's replies, both from the API and from the
+///    command line tool, and builds the request it sends;
+///  - Zero Day's sound renders, at a sane level.
+///
+/// Writes preview.png, preview-dog.png, glitches.png, takeover.png,
+/// trail.png, zeroday.wav and report.txt.
 public static class SelfTest
 {
     private static readonly StringBuilder Report = new();
@@ -47,6 +53,14 @@ public static class SelfTest
             try { Preview(sheet, Path.Combine(folder, "preview.png")); } catch (Exception e) { Check(false, $"preview threw {e}"); }
             try { Routines(sheet, Path.Combine(folder, "trail.png")); } catch (Exception e) { Check(false, $"routines threw {e}"); }
         }
+        try
+        {
+            using var dog = DogSprites();
+            if (dog != null) Preview(dog, Path.Combine(folder, "preview-dog.png"));
+        }
+        catch (Exception e) { Check(false, $"dog threw {e}"); }
+        try { Llm(); } catch (Exception e) { Check(false, $"llm checks threw {e}"); }
+        try { Sound(Path.Combine(folder, "zeroday.wav")); } catch (Exception e) { Check(false, $"zero day sound threw {e}"); }
         try { Glitches(Path.Combine(folder, "glitches.png")); } catch (Exception e) { Check(false, $"glitches threw {e}"); }
         try { TakeoverSheet(Path.Combine(folder, "takeover.png")); } catch (Exception e) { Check(false, $"takeover threw {e}"); }
         if (sheet != null)
@@ -69,8 +83,16 @@ public static class SelfTest
         var fast = Config.Parse("{\"glitchSpeed\": 100, \"zeroDaySpeed\": 0}");
         Check(fast.GlitchSpeed == 16 && fast.ZeroDaySpeed == 1, "glitchSpeed and zeroDaySpeed are clamped");
         Check(d.SizeDivisor == 24 && d.MinGapSeconds == 3 && d.MaxGapSeconds == 15 && d.MaxSlope == 0.45
-              && d.GlitchStyleSeconds == 60 && d.IdleCrawlSeconds == 120 && d.GrowScale == 2,
+              && d.GlitchStyleSeconds == 60 && d.IdleCrawlSeconds == 1800 && d.GrowScale == 2,
             "default settings round-trip with the Mac defaults");
+        Check(d.Pet == "cat" && d.ZeroDaySound && d.ZeroDayVolume == 0.25 && !d.SteppedOut && !d.LlmMode
+              && d.LlmCopyAnswer && d.LlmShowAnswer && d.LlmModel == "claude-opus-5-5" && d.LlmEffort == "medium"
+              && d.LlmAnswerSeconds == 120,
+            "pet, zero day sound, stepped out and LLM settings default like the Mac");
+        var bad = Config.Parse("{\"pet\": \"hamster\", \"llmEffort\": \"huge\", \"zeroDayVolume\": 3, \"llmAnswerSeconds\": -5}");
+        Check(bad.Pet == "cat" && bad.LlmEffort == "medium" && bad.ZeroDayVolume == 1 && bad.LlmAnswerSeconds == 0,
+            "an unknown pet or effort falls back, and the volume and answer time are clamped");
+        Check(Config.Parse("{\"pet\": \"dog\"}").Pet == "dog", "the dog can be picked in settings");
         var odd = Config.Parse("{\"sizeDivisor\": 500, \"napSecondsMin\": 50, \"napSecondsMax\": 10, \"idleCrawlSeconds\": 1, \"mode\": \"crawler\", }");
         Check(odd.SizeDivisor == 60 && odd.NapSecondsMax >= odd.NapSecondsMin && odd.IdleCrawlSeconds == 15 && odd.Mode == "crawler",
             "hand-edited settings are clamped and trailing commas are accepted");
@@ -97,6 +119,29 @@ public static class SelfTest
         Check(missing == 0, "every frame of every clip crops out");
         Check(faces > 60, $"the face is found in {faces} frames for the accessories");
         return sheet.IsLoaded ? sheet : null;
+    }
+
+    private static SpriteSheet? DogSprites()
+    {
+        var dog = new SpriteSheet(Config.Parse("{\"pet\": \"dog\"}"));
+        Check(dog.IsLoaded && dog.IsDog && dog.Ball != null, "the dog's sheet and ball load from the embedded resources");
+        Check(dog.Sheet?.Width == 384 && dog.Sheet?.Height == 288, "the dog's sheet has the cat's 12 x 9 grid");
+        Check(dog.RecolouredPixels > 0, $"the dog's eyes were darkened ({dog.RecolouredPixels} pixels)");
+        int faces = 0;
+        foreach (var clip in ClipTable.All)
+        {
+            for (int i = 0; i < clip.Info().Count; i++)
+            {
+                if (dog.Accessory(Accessory.Glasses, clip, i) != null) faces++;
+            }
+        }
+        Check(faces > 40, $"the dog's face is found in {faces} frames for the accessories");
+        var walker = new CatState { Size = 96, Clip = Clip.SideWalk, IsDog = true };
+        var cat = new CatState { Size = 96, Clip = Clip.SideWalk };
+        Check(walker.CycleDistance < cat.CycleDistance, "the dog takes shorter steps than the cat");
+        using var icon = dog.TrayImage(32);
+        Check(icon != null, "the tray icon can be drawn from the dog");
+        return dog.IsLoaded ? dog : null;
     }
 
     /// Every clip, with and without the outfit, plus the bubble, bowl and ball.
@@ -190,6 +235,7 @@ public static class SelfTest
         }
 
         ZeroDayCheck();
+        AskCheck();
 
         // Where a stroll went, drawn as dots on a scaled-down screen.
         using var canvas = new Canvas(960, 520);
@@ -200,8 +246,31 @@ public static class SelfTest
         Line($"wrote {Path.GetFileName(trailPath)}");
     }
 
-    /// Zero Day has no cat: after the countdown the glitch is on, it hops
-    /// apps every 4 to 7 seconds, and the cat never shows.
+    /// LLM mode: the cat walks in level or downhill, sits under the card, and
+    /// once released it leaves by the side.
+    private static void AskCheck()
+    {
+        var scene = new Scene { Config = new Config() };
+        scene.Cat.Size = 43;
+        scene.SetStage(Surface.Bottom, new RectD(0, 0, 1920, 1040), scene.Cat.Size);
+        var ask = (AskBehavior)Helpers.MakeBehavior(Routine.Ask, scene);
+        double startY = scene.Cat.Pos.Y, highest = startY;
+        bool sat = false, finished = false;
+        for (double t = 0; t < 60 && !finished; t += 1.0 / 60)
+        {
+            if (t > 15) ask.Release();
+            scene.Cat.Advance(1.0 / 60);
+            finished = ask.Update(1.0 / 60, scene);
+            highest = Math.Max(highest, scene.Cat.Pos.Y);
+            if (t > 12 && t < 15 && scene.Cat.Clip is Clip.SitIdle or Clip.StandIdle && Math.Abs(scene.Cat.Pos.X - ask.Spot.X) < 1) sat = true;
+        }
+        bool offStage = scene.Cat.Pos.X < scene.Stage.MinX || scene.Cat.Pos.X > scene.Stage.MaxX;
+        Check(sat && finished && offStage && highest - startY <= scene.Cat.Size * 0.35 + 1,
+            "the LLM cat sits at its spot under the card, never climbs, and leaves by the side once released");
+    }
+
+    /// Zero Day has no cat and no countdown: the glitch is on at once, it
+    /// hops apps every few seconds, and the cat never shows.
     private static void ZeroDayCheck()
     {
         var scene = new Scene { Config = new Config() };
@@ -211,15 +280,17 @@ public static class SelfTest
         int hops = 0;
         zeroDay.RequestRandomApp = () => { hops++; return true; };
         bool catSeen = false;
-        double peak = 0;
+        double peak = 0, firstSecond = 0;
         for (double t = 0; t < 30; t += 1.0 / 60)
         {
             zeroDay.Update(1.0 / 60, scene);
             if (scene.Cat.Visible) catSeen = true;
             peak = Math.Max(peak, zeroDay.TakeoverOpacity);
+            if (t < 1) firstSecond = Math.Max(firstSecond, zeroDay.TakeoverOpacity);
         }
         Check(!catSeen && hops >= 6 && peak >= 0.99,
             $"zero day shows no cat, the glitch reaches full strength and it hopped apps {hops} times in 30 s");
+        Check(firstSecond >= 0.5, $"zero day has no countdown: the glitch is at {firstSecond:0.00} within the first second");
     }
 
     private static (bool finished, double seconds, double climbed, double steepest, double size, string? error) Simulate(
@@ -279,6 +350,46 @@ public static class SelfTest
             return (false, t, highest - startY, steepest, size, $"{e.GetType().Name}: {e.Message}");
         }
         return (false, t, highest - startY, steepest, size, null);
+    }
+
+    // LLM mode ---------------------------------------------------------------
+
+    private static void Llm()
+    {
+        var ok = Asker.ParseCli(
+            "{\"type\":\"system\",\"subtype\":\"init\"}\n" +
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"  x = 2  \"}\n", 0, "");
+        Check(ok is Answer.Text { Value: "x = 2" }, "the answer is read from claude's result line");
+        var limit = Asker.ParseCli("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"result\":\"Not logged in\"}\n", 1, "");
+        Check(limit is Answer.Failed { Why: "Not logged in" }, "claude's own error is shown as the reason");
+        var nothing = Asker.ParseCli("", 3, "boom\nfinal line\n");
+        Check(nothing is Answer.Failed { Why: "final line" }, "with no result line, the last line of stderr is the reason");
+
+        var api = Asker.ParseApi("{\"content\":[{\"type\":\"thinking\",\"thinking\":\"hm\"},{\"type\":\"text\",\"text\":\"Paris\"}],\"stop_reason\":\"end_turn\"}", 200);
+        Check(api is Answer.Text { Value: "Paris" }, "the API's text blocks are the answer and thinking is skipped");
+        var key = Asker.ParseApi("{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}", 401);
+        Check(key is Answer.Failed f && f.Why.StartsWith("Your API key was not accepted"), "a rejected key says so");
+        Check(Asker.ParseApi("{\"content\":[],\"stop_reason\":\"refusal\"}", 200) is Answer.Failed, "a refusal is shown, not an empty card");
+
+        string line = Asker.InputLine(new Question.Text("2 + 2"));
+        var parsed = System.Text.Json.Nodes.JsonNode.Parse(line);
+        Check(line.EndsWith("\n") && line.IndexOf('\n') == line.Length - 1
+              && parsed?["message"]?["content"]?[0]?["text"]?.GetValue<string>().Contains("<copied>\n2 + 2\n</copied>") == true,
+            "the question goes to claude as one stream-json line");
+        using var picture = new Bitmap(4000, 2000);
+        var png = Asker.PngForUpload(picture);
+        using var shrunk = png == null ? null : System.Drawing.Image.FromStream(new MemoryStream(png));
+        Check(shrunk?.Width == 1568 && shrunk?.Height == 784, "a big screenshot is shrunk to 1568 px on its long edge");
+        string? claude = Asker.ClaudePath("");
+        Line($"note  claude command: {claude ?? "not found (answers need an API key on this PC)"}");
+        Line($"note  screenshots folder: {QuestionWatch.ScreenshotFolder()}");
+    }
+
+    private static void Sound(string path)
+    {
+        var (peak, rms) = ZeroDaySound.WriteSample(path, 4);
+        Check(peak > 0.05 && peak <= 1 && rms > 0.01, $"zero day sound renders (peak {peak:0.000}, rms {rms:0.000} at full volume)");
+        Line($"wrote {Path.GetFileName(path)}");
     }
 
     // Glitches ---------------------------------------------------------------

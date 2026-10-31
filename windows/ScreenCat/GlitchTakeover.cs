@@ -151,10 +151,6 @@ public static class Takeover
         R("Total Chaos", 0.72, Synth, TakeoverLayer.Blocks, Slices, Tears, TakeoverLayer.Popups, TakeoverLayer.Cracks),
     };
 
-    /// The "starting in" screen before Zero Day. `n` is the seconds left.
-    public static GlitchRecipe CountdownRecipe(int n) =>
-        R("Countdown", 0.6, Toxic, Scanlines, Tears, TakeoverLayer.BigText($"ZERO DAY IN {n}", $"{n}"));
-
     // Rendering ----------------------------------------------------------
 
     /// Paints one frame of `recipe`, `t` seconds in, filling `r` (y up).

@@ -87,6 +87,9 @@ public sealed class Config
     public double PetSeconds = 1.0;
 
     // Look ---------------------------------------------------------------
+    /// "cat" or "dog". The colour settings below recolour the cat; the dog
+    /// keeps its own coat.
+    public string Pet = "cat";
     public string FurColor = "#A87BE0";
     public string FurShadeColor = "#7E52B3";
     public string OutlineColor = "#2E1B47";
@@ -106,7 +109,7 @@ public sealed class Config
     public double CrawlChance = 0.7;
     /// Start the nonstop crawl after this long with no input. Any input stops it.
     public bool IdleCrawl = true;
-    public double IdleCrawlSeconds = 120;
+    public double IdleCrawlSeconds = 1800;
     /// How big the cat grows when the idle crawl starts.
     public double GrowScale = 2;
     /// How long each full-screen glitch style plays before the next one.
@@ -115,6 +118,33 @@ public sealed class Config
     /// at `zeroDaySpeed`.
     public double GlitchSpeed = 2;
     public double ZeroDaySpeed = 8;
+    /// Zero Day's background sound, and how loud it is (0 to 1).
+    public bool ZeroDaySound = true;
+    public double ZeroDayVolume = 0.25;
+    /// Stepped out: keep the PC awake and the screen on until you turn it
+    /// off. Works with any mode.
+    public bool SteppedOut;
+
+    // LLM mode ----------------------------------------------------------------
+    /// Answer what you copy, and screenshots you take, with Claude. Uses your
+    /// API key if one is saved, or else the `claude` command line tool with
+    /// the login it already has.
+    public bool LlmMode;
+    public bool LlmFromClipboard = true;
+    public bool LlmFromScreenshots = true;
+    /// Put each answer on the clipboard as it arrives, ready to paste.
+    public bool LlmCopyAnswer = true;
+    /// Show the cat and the answer card. Off, answers only go to the
+    /// clipboard, and the tray icon says when one is ready.
+    public bool LlmShowAnswer = true;
+    public string LlmModel = "claude-opus-5-5";
+    /// How hard Claude thinks: "low", "medium", "high", "xhigh" or "max".
+    public string LlmEffort = "medium";
+    /// Close the answer this long after it arrives, unless the pointer is on
+    /// it. 0 keeps it up until you close it.
+    public double LlmAnswerSeconds = 120;
+    /// Full path to `claude`, if it is not in one of the usual places.
+    public string LlmClaudePath = "";
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary in %LOCALAPPDATA%\ScreenCat\Logs. Local only.
@@ -202,6 +232,7 @@ public sealed class Config
         }
 
         c.SizeDivisor = Num("sizeDivisor") ?? c.SizeDivisor;
+        c.Pet = Str("pet") ?? c.Pet;
         c.FirstAppearanceDelay = Num("firstAppearanceDelay") ?? c.FirstAppearanceDelay;
         c.MinGapSeconds = Num("minGapSeconds") ?? c.MinGapSeconds;
         c.MaxGapSeconds = Num("maxGapSeconds") ?? c.MaxGapSeconds;
@@ -249,11 +280,24 @@ public sealed class Config
         c.GrowScale = Num("growScale") ?? c.GrowScale;
         c.GlitchSpeed = Num("glitchSpeed") ?? c.GlitchSpeed;
         c.ZeroDaySpeed = Num("zeroDaySpeed") ?? c.ZeroDaySpeed;
+        c.ZeroDaySound = Bool("zeroDaySound") ?? c.ZeroDaySound;
+        c.ZeroDayVolume = Num("zeroDayVolume") ?? c.ZeroDayVolume;
+        c.SteppedOut = Bool("steppedOut") ?? c.SteppedOut;
+        c.LlmMode = Bool("llmMode") ?? c.LlmMode;
+        c.LlmFromClipboard = Bool("llmFromClipboard") ?? c.LlmFromClipboard;
+        c.LlmFromScreenshots = Bool("llmFromScreenshots") ?? c.LlmFromScreenshots;
+        c.LlmCopyAnswer = Bool("llmCopyAnswer") ?? c.LlmCopyAnswer;
+        c.LlmShowAnswer = Bool("llmShowAnswer") ?? c.LlmShowAnswer;
+        c.LlmModel = Str("llmModel") ?? c.LlmModel;
+        c.LlmEffort = Str("llmEffort") ?? c.LlmEffort;
+        c.LlmAnswerSeconds = Num("llmAnswerSeconds") ?? c.LlmAnswerSeconds;
+        c.LlmClaudePath = Str("llmClaudePath") ?? c.LlmClaudePath;
         c.ActivityLog = Bool("activityLog") ?? c.ActivityLog;
         c.ActivityLogDays = Num("activityLogDays") ?? c.ActivityLogDays;
         c.Opacity = Num("opacity") ?? c.Opacity;
 
         c.SizeDivisor = Math.Clamp(c.SizeDivisor, 2, 60);
+        if (c.Pet != "cat" && c.Pet != "dog") c.Pet = "cat";
         c.RoamHeight = Math.Clamp(c.RoamHeight, 0.05, 1);
         c.GroundBias = Math.Clamp(c.GroundBias, 1, 8);
         c.MaxSlope = Math.Clamp(c.MaxSlope, 0, 2);
@@ -276,6 +320,9 @@ public sealed class Config
         c.GrowScale = Math.Clamp(c.GrowScale, 1, 4);
         c.GlitchSpeed = Math.Clamp(c.GlitchSpeed, 0.25, 16);
         c.ZeroDaySpeed = Math.Clamp(c.ZeroDaySpeed, 1, 16);
+        c.ZeroDayVolume = Math.Clamp(c.ZeroDayVolume, 0, 1);
+        c.LlmAnswerSeconds = Math.Max(0, c.LlmAnswerSeconds);
+        if (!new[] { "low", "medium", "high", "xhigh", "max" }.Contains(c.LlmEffort)) c.LlmEffort = "medium";
         c.ChainChance = Math.Clamp(c.ChainChance, 0, 1);
         c.GlassesChance = Math.Clamp(c.GlassesChance, 0, 1);
         return c;
@@ -339,6 +386,7 @@ public sealed class Config
         var dict = new JsonObject
         {
             ["sizeDivisor"] = d.SizeDivisor,
+            ["pet"] = d.Pet,
             ["firstAppearanceDelay"] = d.FirstAppearanceDelay,
             ["minGapSeconds"] = d.MinGapSeconds,
             ["maxGapSeconds"] = d.MaxGapSeconds,
@@ -386,6 +434,17 @@ public sealed class Config
             ["growScale"] = d.GrowScale,
             ["glitchSpeed"] = d.GlitchSpeed,
             ["zeroDaySpeed"] = d.ZeroDaySpeed,
+            ["zeroDaySound"] = d.ZeroDaySound,
+            ["zeroDayVolume"] = d.ZeroDayVolume,
+            ["steppedOut"] = d.SteppedOut,
+            ["llmMode"] = d.LlmMode,
+            ["llmFromClipboard"] = d.LlmFromClipboard,
+            ["llmFromScreenshots"] = d.LlmFromScreenshots,
+            ["llmCopyAnswer"] = d.LlmCopyAnswer,
+            ["llmShowAnswer"] = d.LlmShowAnswer,
+            ["llmModel"] = d.LlmModel,
+            ["llmEffort"] = d.LlmEffort,
+            ["llmAnswerSeconds"] = d.LlmAnswerSeconds,
             ["activityLog"] = d.ActivityLog,
             ["activityLogDays"] = d.ActivityLogDays,
             ["opacity"] = d.Opacity,

@@ -634,6 +634,77 @@ public sealed class PlayBehavior : IBehavior
     }
 }
 
+// LLM mode -----------------------------------------------------------------
+
+/// LLM mode: walks on, sits under the answer card, and stays while the card is
+/// up. `Release()` sends it off again.
+public sealed class AskBehavior : IBehavior
+{
+    private readonly ScriptedBehavior script;
+    private ScriptedBehavior? leaving;
+    private bool seated;
+    private bool released;
+    private double fidget;
+    /// Where the cat sits, so the card can go up before it arrives.
+    public readonly Vec Spot;
+
+    public AskBehavior(Scene scene)
+    {
+        var cat = scene.Cat;
+        var rect = scene.Stage;
+        double size = cat.Size;
+        var start = Helpers.EntryPoint(scene, size);
+        cat.Pos = start;
+        cat.Visible = true;
+        // Toward the right, and far enough in that the card above fits.
+        double margin = Math.Max(220 * scene.Ui, size * 2);
+        double low = Math.Max(rect.MinX + margin, rect.MinX + rect.Width * 0.55);
+        double high = Math.Max(low, Math.Min(rect.MaxX - margin, rect.MinX + rect.Width * 0.8));
+        Spot = new Vec(Rng.Range(low, high), Math.Min(start.Y, Helpers.GroundY(scene, size)));
+        script = new ScriptedBehavior(new CatAction[]
+        {
+            new CatAction.WalkTo(Spot, 1.2, size * 0.3),
+            new CatAction.Hold(Clip.StandIdle, 0.3),
+        });
+    }
+
+    public void Release() => released = true;
+    public bool IsLeaving => released;
+
+    public bool Update(double dt, Scene scene)
+    {
+        var cat = scene.Cat;
+        if (leaving != null) return leaving.Update(dt, scene);
+        if (released)
+        {
+            leaving = new ScriptedBehavior(new CatAction[]
+            {
+                new CatAction.Hold(Clip.StandIdle, 0.4),
+                new CatAction.WalkTo(Helpers.ExitPoint(scene.Stage, cat.Pos, cat.Size), 1.0, cat.Size * 0.3),
+            });
+            return false;
+        }
+        if (!seated)
+        {
+            if (script.Update(dt, scene))
+            {
+                seated = true;
+                cat.SetClip(Clip.SitIdle);
+                fidget = Rng.Range(5, 10);
+            }
+            return false;
+        }
+        // Shift about a little while you read, so it does not look frozen.
+        fidget -= dt;
+        if (fidget <= 0)
+        {
+            fidget = Rng.Range(5, 12);
+            cat.SetClip(Rng.Unit() < 0.75 ? Clip.SitIdle : Clip.StandIdle);
+        }
+        return false;
+    }
+}
+
 // Crawler ------------------------------------------------------------------
 
 /// Crawler mode: walks under each target window in turn, zaps it from its head
@@ -763,6 +834,8 @@ public enum Routine
     IdleCrawl,
     /// Three minutes of the idle crawl at four times the pace.
     ZeroDay,
+    /// LLM mode: sits under the answer to what you copied.
+    Ask,
 }
 
 public static class Helpers
@@ -776,6 +849,7 @@ public static class Helpers
         Routine.Play => "play",
         Routine.Crawl => "crawl",
         Routine.IdleCrawl => "idlecrawl",
+        Routine.Ask => "ask",
         _ => "zeroday",
     };
 
@@ -793,12 +867,14 @@ public static class Helpers
                 return new HungryBehavior(scene);
             case Routine.Play:
                 return new PlayBehavior(scene);
+            case Routine.Ask:
+                return new AskBehavior(scene);
             case Routine.Crawl:
                 return new CrawlBehavior(scene, scene.CrawlTargets);
             case Routine.IdleCrawl:
                 return new IdleCrawlBehavior(scene, scene.CrawlTargets);
             case Routine.ZeroDay:
-                return new IdleCrawlBehavior(scene, scene.CrawlTargets, speed: scene.Config.ZeroDaySpeed, maxDuration: 180, countdown: 3, catless: true);
+                return new IdleCrawlBehavior(scene, scene.CrawlTargets, speed: scene.Config.ZeroDaySpeed, maxDuration: 180, catless: true);
             case Routine.Nap:
             {
                 // Naps happen at the sides, and the walk in and out is level, so the cat

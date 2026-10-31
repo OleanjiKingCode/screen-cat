@@ -14,9 +14,10 @@
     <RootNamespace>ScreenCat</RootNamespace>
     <AssemblyName>ScreenCat</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Product>Screen Cat</Product>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
@@ -25,6 +26,8 @@
     <EmbeddedResource Include="Assets\Cat_Sprite_Sheet.png" LogicalName="Cat_Sprite_Sheet.png" />
     <EmbeddedResource Include="Assets\Cat_Shadow.png" LogicalName="Cat_Shadow.png" />
     <EmbeddedResource Include="Assets\Cat_Ball.png" LogicalName="Cat_Ball.png" />
+    <EmbeddedResource Include="Assets\Dog_Sprite_Sheet.png" LogicalName="Dog_Sprite_Sheet.png" />
+    <EmbeddedResource Include="Assets\Dog_Ball.png" LogicalName="Dog_Ball.png" />
     <None Include="Assets\CREDIT.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

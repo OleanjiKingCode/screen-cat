@@ -329,4 +329,127 @@ internal static class Native
 
     [DllImport("winmm.dll")]
     public static extern uint timeEndPeriod(uint period);
+
+    // Power ----------------------------------------------------------------
+
+    public const uint ES_SYSTEM_REQUIRED = 0x00000001;
+    public const uint ES_DISPLAY_REQUIRED = 0x00000002;
+    public const uint ES_CONTINUOUS = 0x80000000;
+
+    [DllImport("kernel32.dll")]
+    public static extern uint SetThreadExecutionState(uint flags);
+
+    // Sound ----------------------------------------------------------------
+
+    public const uint WAVE_MAPPER = 0xFFFFFFFF;
+    public const uint CALLBACK_NULL = 0;
+    public const ushort WAVE_FORMAT_PCM = 1;
+    public const uint WHDR_DONE = 0x00000001;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WAVEFORMATEX
+    {
+        public ushort wFormatTag;
+        public ushort nChannels;
+        public uint nSamplesPerSec;
+        public uint nAvgBytesPerSec;
+        public ushort nBlockAlign;
+        public ushort wBitsPerSample;
+        public ushort cbSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WAVEHDR
+    {
+        public IntPtr lpData;
+        public uint dwBufferLength;
+        public uint dwBytesRecorded;
+        public IntPtr dwUser;
+        public uint dwFlags;
+        public uint dwLoops;
+        public IntPtr lpNext;
+        public IntPtr reserved;
+    }
+
+    [DllImport("winmm.dll")]
+    public static extern uint waveOutOpen(out IntPtr wave, uint device, ref WAVEFORMATEX format, IntPtr callback, IntPtr instance, uint flags);
+
+    [DllImport("winmm.dll")]
+    public static extern uint waveOutPrepareHeader(IntPtr wave, IntPtr header, uint size);
+
+    [DllImport("winmm.dll")]
+    public static extern uint waveOutUnprepareHeader(IntPtr wave, IntPtr header, uint size);
+
+    [DllImport("winmm.dll")]
+    public static extern uint waveOutWrite(IntPtr wave, IntPtr header, uint size);
+
+    [DllImport("winmm.dll")]
+    public static extern uint waveOutReset(IntPtr wave);
+
+    [DllImport("winmm.dll")]
+    public static extern uint waveOutClose(IntPtr wave);
+
+    // Clipboard ------------------------------------------------------------
+
+    /// Goes up by one every time anything is put on the clipboard.
+    [DllImport("user32.dll")]
+    public static extern uint GetClipboardSequenceNumber();
+
+    // Credential Manager -----------------------------------------------------
+
+    public const uint CRED_TYPE_GENERIC = 1;
+    public const uint CRED_PERSIST_LOCAL_MACHINE = 2;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct CREDENTIAL
+    {
+        public uint Flags;
+        public uint Type;
+        public string TargetName;
+        public string? Comment;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+        public uint CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public uint Persist;
+        public uint AttributeCount;
+        public IntPtr Attributes;
+        public string? TargetAlias;
+        public string? UserName;
+    }
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CredReadW(string target, uint type, uint flags, out IntPtr credential);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CredWriteW(ref CREDENTIAL credential, uint flags);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CredDeleteW(string target, uint type, uint flags);
+
+    [DllImport("advapi32.dll")]
+    public static extern void CredFree(IntPtr buffer);
+
+    // Shell ------------------------------------------------------------------
+
+    /// Where Win+Print Screen and the Snipping Tool save screenshots.
+    public static Guid FOLDERID_Screenshots = new("b7bede81-df94-4682-a7d8-57a52620b86f");
+
+    [DllImport("shell32.dll")]
+    public static extern int SHGetKnownFolderPath(ref Guid id, uint flags, IntPtr token, out IntPtr path);
+
+    [DllImport("user32.dll")]
+    public static extern bool DestroyIcon(IntPtr icon);
+
+    public const int WM_NCLBUTTONDOWN = 0x00A1;
+    public const int HTCAPTION = 2;
+
+    [DllImport("user32.dll")]
+    public static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    /// `--ask` prints to the terminal it was started from.
+    [DllImport("kernel32.dll")]
+    public static extern bool AttachConsole(int pid);
 }

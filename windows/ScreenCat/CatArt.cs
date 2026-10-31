@@ -22,6 +22,8 @@ public sealed class CatState
     public bool Visible;
     /// What it has on for this visit. Picked when a routine starts.
     public HashSet<Accessory> Wearing = new();
+    /// The dog takes shorter steps than the cat, so a cycle covers less ground.
+    public bool IsDog;
 
     public void SetClip(Clip c)
     {
@@ -37,9 +39,9 @@ public sealed class CatState
     /// How far the cat travels per full cycle of the current walk or run.
     public double CycleDistance => Clip switch
     {
-        Clip.Run => DrawnSize * 2.0,
+        Clip.Run => DrawnSize * (IsDog ? 0.88 : 2.0),
         Clip.FrontWalk => DrawnSize * 0.9,
-        _ => DrawnSize * 1.15,
+        _ => DrawnSize * (IsDog ? 0.6 : 1.15),
     };
 
     public int FrameIndex

@@ -7,8 +7,9 @@ using System.Reflection;
 
 namespace ScreenCat;
 
-// Sprite art: "Cat Pack" (free tier) by Glem / octopusINKUS.
-// https://octopusinkus.itch.io/cat-pack , see Assets/CREDIT.txt.
+// Cat art: "Cat Pack" (free tier) by Glem / octopusINKUS, used with the
+// artist's permission. https://octopusinkus.itch.io/cat-pack
+// Dog art: original, made for Screen Cat. See Assets/CREDIT.txt.
 //
 // The sheet is 384x288: a 12 x 9 grid of 32x32 frames. Frames are bottom
 // aligned, with the ground line at row 30 and a standing cat about 27px tall.
@@ -100,8 +101,24 @@ public sealed class SpriteSheet : IDisposable
     /// How many pixels the coat recolour changed, for the self-test.
     public int RecolouredPixels { get; private set; }
 
-    public SpriteSheet(SpritePalette palette)
+    /// The pet the settings ask for, in the settings' colours.
+    public SpriteSheet(Config config) : this(config.SpritePalette, config.Pet) { }
+
+    public SpriteSheet(SpritePalette palette, string pet = "cat")
     {
+        // The dog is drawn in its own colours. Only its eyes are recoloured:
+        // they are pure white in the file, the same as the cat's, so the
+        // glasses and chain can find the face.
+        if (pet == "dog" && HasResource("Dog_Sprite_Sheet.png"))
+        {
+            Sheet = Load("Dog_Sprite_Sheet.png", new Dictionary<uint, uint> { [SpritePalette.SrcEye] = SpritePalette.DogEye }, out int eyes);
+            RecolouredPixels = eyes;
+            Ball = Load("Dog_Ball.png", new Dictionary<uint, uint>(), out _);
+            Shadow = Load("Cat_Shadow.png", new Dictionary<uint, uint>(), out _);
+            LoadRaw("Dog_Sprite_Sheet.png");
+            IsDog = true;
+            return;
+        }
         // The sheet gets the coat mapping only. The yarn colours are left alone
         // there because the cat's nose and mouth are drawn in them too, and
         // tinting those turns its face the colour of the ball.
@@ -113,6 +130,8 @@ public sealed class SpriteSheet : IDisposable
     }
 
     public bool IsLoaded => Sheet != null;
+    /// The dog's sheet was loaded, not the cat's.
+    public bool IsDog { get; }
 
     public void Dispose()
     {
@@ -124,6 +143,12 @@ public sealed class SpriteSheet : IDisposable
     }
 
     public static Stream? Resource(string name) => Assembly.GetExecutingAssembly().GetManifestResourceStream(name);
+
+    private static bool HasResource(string name)
+    {
+        using var stream = Resource(name);
+        return stream != null;
+    }
 
     /// Reads a PNG into straight-alpha RGBA bytes.
     private static (byte[] px, int w, int h)? ReadRgba(string name)
@@ -229,6 +254,37 @@ public sealed class SpriteSheet : IDisposable
         rawWidth = read.Value.w;
     }
 
+    /// The tray icon: the first sitting frame cropped to the pet and scaled up
+    /// by whole pixels, so it stays crisp pixel art at `size` square.
+    public Bitmap? TrayImage(int size)
+    {
+        var frame = Frame(Clip.SitIdle, 0);
+        if (frame == null || raw.Length == 0) return null;
+        int s = FrameSize;
+        var info = Clip.SitIdle.Info();
+        int minX = s, maxX = -1, minY = s, maxY = -1;
+        for (int y = 0; y < s; y++)
+        {
+            for (int x = 0; x < s; x++)
+            {
+                if (raw[((info.Row * s + y) * rawWidth + info.Start * s + x) * 4 + 3] == 0) continue;
+                minX = Math.Min(minX, x); maxX = Math.Max(maxX, x);
+                minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
+            }
+        }
+        if (maxX < 0) return null;
+        int w = maxX - minX + 1, h = maxY - minY + 1;
+        int scale = Math.Max(1, size / Math.Max(w, h));
+        var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(bmp);
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+        // Centred across, standing on the bottom edge.
+        var to = new Rectangle((size - w * scale) / 2, size - h * scale, w * scale, h * scale);
+        g.DrawImage(frame, to, new Rectangle(minX, minY, w, h), GraphicsUnit.Pixel);
+        return bmp;
+    }
+
     /// Frame `index` of `clip`, cropped out of the sheet and cached.
     public Bitmap? Frame(Clip clip, int index)
     {
@@ -293,6 +349,8 @@ public sealed class SpritePalette
     public const uint SrcEye = 0xFFFFFF;     // eyes
     public const uint SrcYarnA = 0xBC4A9B;   // yarn ball
     public const uint SrcYarnB = 0xD25A87;   // yarn ball highlight
+    /// What the dog's white eye pixels turn into: near black.
+    public const uint DogEye = 0x1B1220;
 
     /// Coat, ears and eyes. Applied to the sheet.
     public readonly Dictionary<uint, uint> Coat;

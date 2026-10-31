@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Media;
 using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
@@ -36,6 +37,18 @@ public sealed class App : IDisposable
     private ToolStripMenuItem loginItem = null!;
     private ToolStripMenuItem normalItem = null!;
     private ToolStripMenuItem crawlerItem = null!;
+    private ToolStripMenuItem petItem = null!;
+    private ToolStripMenuItem catItem = null!;
+    private ToolStripMenuItem dogItem = null!;
+    private ToolStripMenuItem modeItem = null!;
+    private ToolStripMenuItem llmItem = null!;
+    private ToolStripMenuItem llmToggleItem = null!;
+    private ToolStripMenuItem showAnswerItem = null!;
+    private ToolStripMenuItem copyAnswerItem = null!;
+    private ToolStripMenuItem answersFromItem = null!;
+    private ToolStripMenuItem steppedOutItem = null!;
+    /// The tray icon's own handle, destroyed when the icon is replaced.
+    private IntPtr trayIconHandle;
 
     private IBehavior? behavior;
     private readonly FrameClock clock;
@@ -81,6 +94,20 @@ public sealed class App : IDisposable
     /// The shrink-away exit has already put you back in your app.
     private bool exitHandled;
     private readonly InputWatch input = new();
+    private readonly ZeroDaySound zeroDaySound = new();
+
+    // LLM mode: what you copy or screenshot goes to Claude, and the cat sits
+    // under the answer.
+    private readonly Asker asker;
+    private readonly QuestionWatch questions = new();
+    private AnswerCard? answerCard;
+    /// The newest answer, so copying part of it is not asked about again.
+    private string lastAnswer = "";
+    /// A dot on the tray icon while an answer with no card is on its way
+    /// ("thinking"), then "ready" or "failed" for a few seconds.
+    private string badge = "";
+    private string badgeNote = "";
+    private readonly System.Windows.Forms.Timer badgeTimer = new();
 
     // What the overlay draws besides the cat.
     private Vec? bowlAt;
@@ -98,6 +125,8 @@ public sealed class App : IDisposable
     public App(bool demo)
     {
         this.demo = demo;
+        // No settings file yet means this is the very first launch.
+        bool firstRun = !File.Exists(Config.FilePath);
         Config.WriteDefaultFileIfMissing();
         scene.Config = Config.Load();
 
@@ -117,15 +146,16 @@ public sealed class App : IDisposable
 
         var ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         clock = new FrameClock(ui, Tick);
+        asker = new Asker();
 
         menu = BuildMenu();
         tray = new NotifyIcon
         {
             Text = "Screen Cat",
-            Icon = MakeTrayIcon(),
             ContextMenuStrip = menu,
-            Visible = true,
         };
+        RefreshTray();
+        tray.Visible = true;
         // The Mac menu opens on a plain click, so the left button opens it too.
         tray.MouseUp += (_, e) =>
         {
@@ -152,8 +182,53 @@ public sealed class App : IDisposable
         idleTimer.Interval = 1000;
         idleTimer.Tick += (_, _) => CheckIdleCrawl();
         idleTimer.Start();
+        badgeTimer.Tick += (_, _) => SetBadge("", "");
 
+        ApplySteppedOut();
+        questions.OnQuestion = q => Ask(q);
+        questions.IsOwnText = text => lastAnswer.Length > 0 && lastAnswer.Contains(text);
+        ApplyLlmMode();
+        if (firstRun && !demo) Later(1500, ShowWelcome);
         Schedule(demo ? 2 : scene.Config.FirstAppearanceDelay);
+    }
+
+    private static void Later(int ms, Action action)
+    {
+        var timer = new System.Windows.Forms.Timer { Interval = ms };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            timer.Dispose();
+            action();
+        };
+        timer.Start();
+    }
+
+    /// The app has no window and no taskbar button, so on the first launch
+    /// say where it went.
+    private static void ShowWelcome()
+    {
+        const string text = "Your pet lives in the system tray: look for the little cat by the clock. " +
+            "If it is not there, click the ^ arrow next to the clock, and drag the cat out to keep it in view.\n\n" +
+            "Click it to pick a cat or a dog, change modes, turn on LLM mode, or quit.\n\n" +
+            "The pet comes out on its own every few seconds. Nothing it does touches your apps.";
+        try
+        {
+            var login = new TaskDialogButton("Also open at login");
+            var page = new TaskDialogPage
+            {
+                Caption = "Screen Cat",
+                Heading = "Screen Cat is running",
+                Text = text,
+                Icon = TaskDialogIcon.Information,
+                Buttons = { TaskDialogButton.OK, login },
+            };
+            if (TaskDialog.ShowDialog(page) == login) LoginItem.SetEnabled(true);
+        }
+        catch
+        {
+            MessageBox.Show(text, "Screen Cat is running", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 
     private double Now => time.Elapsed.TotalSeconds;
@@ -173,6 +248,8 @@ public sealed class App : IDisposable
         // Excluded windows still show on the glass but not in screenshots,
         // recordings or anything being screen-shared.
         overlay.SetHiddenFromCapture(c.HideFromCapture);
+        // The answer card follows the cat: in captures only if the cat is.
+        answerCard?.Follow(Topmost, c.HideFromCapture);
     }
 
     private bool Topmost => !scene.Config.WindowLevel.Equals("floating", StringComparison.OrdinalIgnoreCase);
@@ -182,19 +259,24 @@ public sealed class App : IDisposable
     private void LoadSprites()
     {
         var c = scene.Config;
-        string key = string.Join("|", c.FurColor, c.FurShadeColor, c.OutlineColor, c.InnerColor, c.EyeColor, c.BallColor);
+        string key = string.Join("|", c.Pet, c.FurColor, c.FurShadeColor, c.OutlineColor, c.InnerColor, c.EyeColor, c.BallColor);
         if (key == loadedPaletteKey && sheet != null) return;
-        var fresh = new SpriteSheet(c.SpritePalette);
+        var fresh = new SpriteSheet(c);
         if (!fresh.IsLoaded) return;
         sheet?.Dispose();
         sheet = fresh;
+        scene.Cat.IsDog = fresh.IsDog;
         loadedPaletteKey = key;
+        // Still null while the constructor loads the first sheet.
+        if (tray != null) RefreshTray();
     }
 
     private void ReloadConfig()
     {
         scene.Config = Config.Load();
         ApplyConfig();
+        ApplySteppedOut();
+        ApplyLlmMode();
         LoadSprites();
     }
 
@@ -256,33 +338,65 @@ public sealed class App : IDisposable
         statusItem = new ToolStripMenuItem("Waiting") { Enabled = false };
         m.Items.Add(statusItem);
         m.Items.Add(new ToolStripSeparator());
-        // Menu picks force the routine: if you ask for the cat, you get the cat.
-        m.Items.Add("Take a walk", null, (_, _) => Start(Routine.Stroll, force: true));
-        m.Items.Add("Have a nap", null, (_, _) => Start(Routine.Nap, force: true));
-        m.Items.Add("Chase a ball", null, (_, _) => Start(Routine.Ball, force: true));
-        m.Items.Add("Beg for food", null, (_, _) => Start(Routine.Hungry, force: true));
-        m.Items.Add("Ask to play", null, (_, _) => Start(Routine.Play, force: true));
-        m.Items.Add("Break some apps (crawler)", null, (_, _) => Start(Routine.Crawl, force: true));
-        m.Items.Add("Crawl until I touch something", null, (_, _) => BeginIdleCrawl(1.0));
-        m.Items.Add(new ToolStripSeparator());
-
-        var mode = new ToolStripMenuItem("Mode");
-        normalItem = new ToolStripMenuItem("Normal", null, (_, _) => SetMode("normal"));
-        crawlerItem = new ToolStripMenuItem("Crawler", null, (_, _) => SetMode("crawler"));
-        // Zero Day is a show, not a lasting mode: it runs once and the saved
-        // mode stays what it was.
-        var zeroDay = new ToolStripMenuItem("Zero Day (3 min hack, starts now)", null, (_, _) =>
-        {
-            ActivityLog.Shared.Cat("Zero Day started from the menu");
-            BeginIdleCrawl(3.2, Routine.ZeroDay);
-        });
-        mode.DropDownItems.AddRange(new ToolStripItem[] { normalItem, crawlerItem, zeroDay });
-        m.Items.Add(mode);
-        m.Items.Add(new ToolStripSeparator());
-
         pauseItem = new ToolStripMenuItem("Pause", null, (_, _) => TogglePause());
         m.Items.Add(pauseItem);
         m.Items.Add(new ToolStripSeparator());
+
+        petItem = new ToolStripMenuItem("Pet");
+        catItem = new ToolStripMenuItem("Cat", null, (_, _) => PickPet("cat"));
+        dogItem = new ToolStripMenuItem("Dog", null, (_, _) => PickPet("dog"));
+        petItem.DropDownItems.AddRange(new ToolStripItem[] { catItem, dogItem });
+        m.Items.Add(petItem);
+
+        modeItem = new ToolStripMenuItem("Mode");
+        normalItem = new ToolStripMenuItem("Normal", null, (_, _) => SetMode("normal"));
+        crawlerItem = new ToolStripMenuItem("Crawler (breaks windows, just paint)", null, (_, _) => SetMode("crawler"));
+        modeItem.DropDownItems.AddRange(new ToolStripItem[] { normalItem, crawlerItem });
+        m.Items.Add(modeItem);
+
+        // Menu picks force the routine: if you ask for the cat, you get the cat.
+        var now = new ToolStripMenuItem("Play now");
+        now.DropDownItems.Add("Take a walk", null, (_, _) => Start(Routine.Stroll, force: true));
+        now.DropDownItems.Add("Have a nap", null, (_, _) => Start(Routine.Nap, force: true));
+        now.DropDownItems.Add("Chase a ball", null, (_, _) => Start(Routine.Ball, force: true));
+        now.DropDownItems.Add("Beg for food", null, (_, _) => Start(Routine.Hungry, force: true));
+        now.DropDownItems.Add("Ask to play", null, (_, _) => Start(Routine.Play, force: true));
+        now.DropDownItems.Add(new ToolStripSeparator());
+        now.DropDownItems.Add("Break some apps", null, (_, _) => Start(Routine.Crawl, force: true));
+        now.DropDownItems.Add("Crawl until I touch something", null, (_, _) => BeginIdleCrawl(1.0));
+        // Zero Day is a show, not a lasting mode: it runs once and the saved
+        // mode stays what it was. No countdown: it starts at once, and input
+        // in the first 1.5 s (letting go of the mouse after the click) does
+        // not count.
+        now.DropDownItems.Add("Zero Day (3 min hack)", null, (_, _) =>
+        {
+            ActivityLog.Shared.Cat("Zero Day started from the menu");
+            BeginIdleCrawl(1.5, Routine.ZeroDay);
+        });
+        m.Items.Add(now);
+        m.Items.Add(new ToolStripSeparator());
+
+        llmItem = new ToolStripMenuItem("LLM mode");
+        llmToggleItem = new ToolStripMenuItem(LlmModeTitle(false), null, (_, _) => ToggleLlmMode());
+        showAnswerItem = new ToolStripMenuItem("Show answer box", null, (_, _) => ToggleShowAnswers());
+        copyAnswerItem = new ToolStripMenuItem("Copy answers to clipboard", null, (_, _) => ToggleCopyAnswers());
+        answersFromItem = new ToolStripMenuItem("Answers come from") { Enabled = false };
+        llmItem.DropDownItems.AddRange(new ToolStripItem[]
+        {
+            llmToggleItem,
+            new ToolStripMenuItem("Ask about what I copied now", null, (_, _) => AskAboutClipboard()),
+            new ToolStripSeparator(),
+            showAnswerItem,
+            copyAnswerItem,
+            new ToolStripSeparator(),
+            new ToolStripMenuItem("Set API key...", null, (_, _) => SetApiKey()),
+            answersFromItem,
+        });
+        m.Items.Add(llmItem);
+        m.Items.Add(new ToolStripSeparator());
+
+        steppedOutItem = new ToolStripMenuItem("Stepped out (PC never sleeps)", null, (_, _) => ToggleSteppedOut());
+        m.Items.Add(steppedOutItem);
         captureItem = new ToolStripMenuItem("Show in screenshots && recordings", null, (_, _) => ToggleCapture());
         m.Items.Add(captureItem);
         loginItem = new ToolStripMenuItem("Open at login", null, (_, _) =>
@@ -292,26 +406,43 @@ public sealed class App : IDisposable
         });
         m.Items.Add(loginItem);
         m.Items.Add(new ToolStripSeparator());
-        m.Items.Add("Open today's activity log", null, (_, _) => OpenActivityLog());
-        m.Items.Add("Show all activity logs", null, (_, _) => ShowActivityLogs());
-        m.Items.Add(new ToolStripSeparator());
-        m.Items.Add("Edit settings...", null, (_, _) => EditSettings());
-        m.Items.Add("Reload settings", null, (_, _) => ReloadConfig());
+
+        var logs = new ToolStripMenuItem("Activity log");
+        logs.DropDownItems.Add("Open today's log", null, (_, _) => OpenActivityLog());
+        logs.DropDownItems.Add("Show all logs", null, (_, _) => ShowActivityLogs());
+        m.Items.Add(logs);
+        var settings = new ToolStripMenuItem("Settings");
+        settings.DropDownItems.Add("Edit settings file...", null, (_, _) => EditSettings());
+        settings.DropDownItems.Add("Reload settings", null, (_, _) => ReloadConfig());
+        m.Items.Add(settings);
         m.Items.Add(new ToolStripSeparator());
         m.Items.Add("Quit Screen Cat", null, (_, _) => Quit());
         m.Opening += (_, _) => MenuWillOpen();
         return m;
     }
 
-    /// Refresh the top line each time the menu opens, so it is obvious why the
-    /// cat is or is not showing up.
+    /// Refresh the ticks and the top line each time the menu opens, so it is
+    /// obvious why the pet is or is not showing up.
     private void MenuWillOpen()
     {
-        scene.Config = Config.Load();
-        captureItem.Checked = !scene.Config.HideFromCapture;
+        var c = Config.Load();
+        scene.Config = c;
+        captureItem.Checked = !c.HideFromCapture;
         loginItem.Checked = LoginItem.IsEnabled;
-        normalItem.Checked = scene.Config.Mode != "crawler";
-        crawlerItem.Checked = scene.Config.Mode == "crawler";
+        steppedOutItem.Checked = StayAwake.IsOn;
+        copyAnswerItem.Checked = c.LlmCopyAnswer;
+        showAnswerItem.Checked = c.LlmShowAnswer;
+        normalItem.Checked = c.Mode != "crawler";
+        crawlerItem.Checked = c.Mode == "crawler";
+        catItem.Checked = c.Pet == "cat";
+        dogItem.Checked = c.Pet == "dog";
+        // The submenu titles carry the current choice, so the menu reads at
+        // a glance without opening each one.
+        petItem.Text = $"Pet: {(c.Pet == "dog" ? "Dog" : "Cat")}";
+        modeItem.Text = $"Mode: {(c.Mode == "crawler" ? "Crawler" : "Normal")}";
+        llmItem.Text = $"LLM mode: {(c.LlmMode ? "On" : "Off")}";
+        llmToggleItem.Text = LlmModeTitle(c.LlmMode);
+        answersFromItem.Text = ApiKey.IsSet ? "Answers come from your API key" : "Answers come from your Claude Code login";
         if (paused)
         {
             statusItem.Text = "Paused";
@@ -320,7 +451,7 @@ public sealed class App : IDisposable
         {
             statusItem.Text = "Away while the screen is off";
         }
-        else if (Watching.Reason(scene.Config, ScreenRect(TargetScreen())) is string why)
+        else if (Watching.Reason(c, ScreenRect(TargetScreen())) is string why)
         {
             statusItem.Text = char.ToUpperInvariant(why[0]) + why.Substring(1);
         }
@@ -372,6 +503,228 @@ public sealed class App : IDisposable
         captureItem.Checked = !scene.Config.HideFromCapture;
     }
 
+    /// Cat or dog, saved, and swapped in at once, even mid-walk.
+    private void PickPet(string pet)
+    {
+        scene.Config.Pet = pet;
+        Config.Update("pet", pet);
+        LoadSprites();
+        ActivityLog.Shared.Cat($"pet set to {pet}");
+    }
+
+    /// Paste your own Anthropic API key. It goes to Credential Manager. With
+    /// it, answers come from the Claude API; without it, from Claude Code.
+    private static void SetApiKey()
+    {
+        using var dialog = new ApiKeyDialog(ApiKey.IsSet);
+        dialog.ShowDialog();
+        switch (dialog.Picked)
+        {
+            case ApiKeyDialog.Choice.Save:
+                if (dialog.Key.Length == 0) return;
+                if (ApiKey.Save(dialog.Key)) ActivityLog.Shared.Cat("llm: api key saved");
+                else SystemSounds.Beep.Play();
+                break;
+            case ApiKeyDialog.Choice.Remove:
+                ApiKey.Delete();
+                ActivityLog.Shared.Cat("llm: api key removed");
+                break;
+        }
+    }
+
+    /// Ticked, the PC never sleeps and the screen stays on. Saved to
+    /// settings, so it is still on after a restart.
+    private void ToggleSteppedOut()
+    {
+        scene.Config.SteppedOut = !scene.Config.SteppedOut;
+        Config.Update("steppedOut", scene.Config.SteppedOut);
+        ApplySteppedOut();
+        steppedOutItem.Checked = StayAwake.IsOn;
+    }
+
+    /// An amber dot on the tray cat says the PC is being kept awake.
+    private void ApplySteppedOut()
+    {
+        bool wasOn = StayAwake.IsOn;
+        StayAwake.Set(scene.Config.SteppedOut);
+        RefreshTray();
+        if (wasOn == StayAwake.IsOn) return;
+        ActivityLog.Shared.Cat(StayAwake.IsOn ? "stepped out: PC stays awake" : "stepped out off: PC may sleep");
+    }
+
+    // LLM mode ---------------------------------------------------------------
+
+    /// Says what clicking it will do, so turning the mode off is obvious.
+    private static string LlmModeTitle(bool on) =>
+        on ? "Turn LLM mode off" : "Turn LLM mode on (answer what I copy or screenshot)";
+
+    private void ToggleLlmMode()
+    {
+        scene.Config.LlmMode = !scene.Config.LlmMode;
+        Config.Update("llmMode", scene.Config.LlmMode);
+        ApplyLlmMode();
+        llmToggleItem.Text = LlmModeTitle(scene.Config.LlmMode);
+    }
+
+    /// Ticked, each answer goes on the clipboard as it arrives, ready to paste.
+    private void ToggleCopyAnswers()
+    {
+        scene.Config.LlmCopyAnswer = !scene.Config.LlmCopyAnswer;
+        Config.Update("llmCopyAnswer", scene.Config.LlmCopyAnswer);
+        copyAnswerItem.Checked = scene.Config.LlmCopyAnswer;
+    }
+
+    /// Unticked, there is no cat and no card: each answer goes straight to
+    /// the clipboard. Unticking it while a card is up closes the card.
+    private void ToggleShowAnswers()
+    {
+        scene.Config.LlmShowAnswer = !scene.Config.LlmShowAnswer;
+        Config.Update("llmShowAnswer", scene.Config.LlmShowAnswer);
+        showAnswerItem.Checked = scene.Config.LlmShowAnswer;
+        if (!scene.Config.LlmShowAnswer && behavior is AskBehavior)
+        {
+            answerCard?.Dismiss();
+            CloseAnswer();
+        }
+    }
+
+    /// Listens only while the mode is on. Turning it on never answers what
+    /// was already on the clipboard.
+    private void ApplyLlmMode()
+    {
+        var c = scene.Config;
+        if (!c.LlmMode)
+        {
+            if (questions.IsRunning) ActivityLog.Shared.Cat("llm mode off");
+            questions.Stop();
+            return;
+        }
+        if (!questions.IsRunning) ActivityLog.Shared.Cat("llm mode on");
+        questions.Start(c.LlmFromClipboard, c.LlmFromScreenshots);
+    }
+
+    /// A one-off, with or without LLM mode: ask about the clipboard now.
+    private void AskAboutClipboard()
+    {
+        Question? question = null;
+        try { question = QuestionWatch.ClipboardQuestion(); } catch { }
+        if (question == null)
+        {
+            SystemSounds.Beep.Play();
+            return;
+        }
+        Ask(question, fromMenu: true);
+    }
+
+    /// The cat walks on and sits, the card goes up above where it will sit,
+    /// and the answer fills the card when Claude replies. A new question while
+    /// the cat is already sitting reuses the same cat and card.
+    private void Ask(Question question, bool fromMenu = false)
+    {
+        if (away || (!fromMenu && paused)) return;
+        scene.Config = Config.Load();
+        if (!scene.Config.LlmShowAnswer)
+        {
+            AskQuietly(question);
+            return;
+        }
+        // A quiet question still on its way is replaced by this one.
+        if (badge.Length > 0) SetBadge("", "");
+        // A cat already walking off cannot sit under a new card: send a new one.
+        if (behavior is not AskBehavior { IsLeaving: false }) Start(Routine.Ask, force: true);
+        if (behavior is not AskBehavior sitting) return;
+        var card = answerCard ?? MakeAnswerCard();
+        var head = scene.ToScreen.Apply(new Vec(sitting.Spot.X, sitting.Spot.Y + scene.Cat.Size * 1.05));
+        var area = scene.ScreenRect;
+        card.ShowThinking(question, new Point((int)head.X, (int)head.Y),
+            new Rectangle((int)area.MinX, (int)area.MinY, (int)area.Width, (int)area.Height), scene.Ui);
+        card.Follow(Topmost, scene.Config.HideFromCapture);
+        ActivityLog.Shared.Cat($"llm: asked about {question.Summary}");
+        var asked = DateTime.Now;
+        var c = scene.Config;
+        asker.Ask(question, c, answer =>
+        {
+            string took = $"{(DateTime.Now - asked).TotalSeconds:0.0}s";
+            switch (answer)
+            {
+                case Answer.Text text:
+                    ActivityLog.Shared.Cat($"llm: answered in {took}");
+                    lastAnswer = text.Value;
+                    card.ShowAnswer(text.Value, c.LlmAnswerSeconds);
+                    // Through the card's own copy, so the watcher knows it is ours.
+                    if (c.LlmCopyAnswer) card.CopyAnswer();
+                    break;
+                case Answer.Failed failed:
+                    ActivityLog.Shared.Cat($"llm: no answer after {took}: {failed.Why}");
+                    card.ShowError(failed.Why, c.LlmAnswerSeconds);
+                    break;
+            }
+        });
+    }
+
+    /// No cat and no card: the answer goes straight to the clipboard, and
+    /// the tray icon shows it is coming, then that it is ready.
+    private void AskQuietly(Question question)
+    {
+        ActivityLog.Shared.Cat($"llm: asked about {question.Summary}, no card");
+        SetBadge("thinking", "thinking");
+        var asked = DateTime.Now;
+        asker.Ask(question, scene.Config, answer =>
+        {
+            string took = $"{(DateTime.Now - asked).TotalSeconds:0.0}s";
+            switch (answer)
+            {
+                case Answer.Text text:
+                    ActivityLog.Shared.Cat($"llm: answered in {took}, copied");
+                    lastAnswer = text.Value;
+                    try
+                    {
+                        Clipboard.SetDataObject(text.Value, true, 5, 100);
+                        questions.OwnChange = Native.GetClipboardSequenceNumber();
+                        SetBadge("ready", "answer copied", 4);
+                    }
+                    catch
+                    {
+                        SetBadge("failed", "could not copy the answer", 6);
+                    }
+                    break;
+                case Answer.Failed failed:
+                    ActivityLog.Shared.Cat($"llm: no answer after {took}: {failed.Why}");
+                    SetBadge("failed", failed.Why, 6);
+                    break;
+            }
+        });
+    }
+
+    private void SetBadge(string mark, string note, double? seconds = null)
+    {
+        badgeTimer.Stop();
+        badge = mark;
+        badgeNote = note;
+        RefreshTray();
+        if (seconds is not double s) return;
+        badgeTimer.Interval = (int)(s * 1000);
+        badgeTimer.Start();
+    }
+
+    /// Sends the sitting cat off and drops any answer still coming.
+    private void CloseAnswer()
+    {
+        asker.Cancel();
+        (behavior as AskBehavior)?.Release();
+    }
+
+    private AnswerCard MakeAnswerCard()
+    {
+        var card = new AnswerCard(scene.Config.Extras.Outline)
+        {
+            OnClosedByUser = CloseAnswer,
+            OnCopy = () => questions.OwnChange = Native.GetClipboardSequenceNumber(),
+        };
+        answerCard = card;
+        return card;
+    }
+
     private static void OpenPath(string path)
     {
         try
@@ -410,21 +763,46 @@ public sealed class App : IDisposable
         Application.Exit();
     }
 
-    /// The tray icon: the cat's first sitting frame, scaled up crisp.
-    private Icon MakeTrayIcon()
+    /// The tray icon: the pet's first sitting frame, scaled up crisp, with an
+    /// amber dot while stepped out and a coloured dot for a quiet answer.
+    /// The tooltip says what the dots mean.
+    private void RefreshTray()
     {
-        var frame = sheet?.Frame(Clip.SitIdle, 0);
-        if (frame == null) return SystemIcons.Application;
         int size = SystemInformation.SmallIconSize.Width >= 24 ? 32 : 16;
-        using var bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(bmp))
+        using var bmp = sheet?.TrayImage(size);
+        if (bmp == null)
         {
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
-            // The cat sits in the lower middle of its frame; crop to it.
-            g.DrawImage(frame, new Rectangle(0, 0, size, size), new Rectangle(3, 4, 26, 26), GraphicsUnit.Pixel);
+            tray.Icon = SystemIcons.Application;
         }
-        return Icon.FromHandle(bmp.GetHicon());
+        else
+        {
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                int dot = Math.Max(6, size * 3 / 8);
+                void Dot(Color colour, int x, int y)
+                {
+                    using var fill = new SolidBrush(colour);
+                    using var rim = new Pen(Color.FromArgb(40, 24, 60), Math.Max(1, size / 16f));
+                    g.FillEllipse(fill, x, y, dot - 1, dot - 1);
+                    g.DrawEllipse(rim, x, y, dot - 1, dot - 1);
+                }
+                if (StayAwake.IsOn) Dot(Color.FromArgb(245, 166, 35), size - dot, 0);
+                if (badge == "thinking") Dot(Color.FromArgb(74, 163, 255), size - dot, size - dot);
+                else if (badge == "ready") Dot(Color.FromArgb(60, 203, 110), size - dot, size - dot);
+                else if (badge == "failed") Dot(Color.FromArgb(229, 72, 77), size - dot, size - dot);
+            }
+            var handle = bmp.GetHicon();
+            var old = trayIconHandle;
+            tray.Icon = Icon.FromHandle(handle);
+            trayIconHandle = handle;
+            if (old != IntPtr.Zero) Native.DestroyIcon(old);
+        }
+        string text = "Screen Cat";
+        if (StayAwake.IsOn) text += ", stepped out (PC stays awake)";
+        if (badgeNote.Length > 0) text += ": " + badgeNote;
+        // Windows cuts tray tooltips off at 127 characters.
+        tray.Text = text.Length > 127 ? text.Substring(0, 124) + "..." : text;
     }
 
     // Screens --------------------------------------------------------------
@@ -601,6 +979,7 @@ public sealed class App : IDisposable
         if (next.Pid == front) return false;
         BringForward(next.Handle);
         switchedApps = true;
+        zeroDaySound.Hop();
         ActivityLog.Shared.Cat($"hopped to {Watching.DisplayName(next.Pid)} ({places} to the {(side > 0 ? "right" : "left")})");
         return true;
     }
@@ -622,14 +1001,6 @@ public sealed class App : IDisposable
         // Zero Day moves fast, so it renders at 30 fps; the idle crawl at 20.
         if (takeoverFrame % (idle.Catless ? 2 : 3) != 0) return;
         double ui = scene.Ui;
-        if (idle.CountdownLeft > 0)
-        {
-            takeover.Render(Takeover.CountdownRecipe((int)Math.Ceiling(idle.CountdownLeft)), b.Width / ui, b.Height / ui,
-                idle.CountdownLeft, 7, 0);
-            shownTakeoverOpacity = 1;
-            takeoverDirty = true;
-            return;
-        }
         if (idle.TakeoverOpacity <= 0.01)
         {
             if (takeover.HasFrame)
@@ -780,7 +1151,7 @@ public sealed class App : IDisposable
         // bubble the right way up, so they stay on the bottom edge. So do the
         // crawls, which zap windows from below.
         bool mayUseWall = routine != Routine.Hungry && routine != Routine.Play && routine != Routine.Crawl
-            && routine != Routine.IdleCrawl && routine != Routine.ZeroDay
+            && routine != Routine.Ask && routine != Routine.IdleCrawl && routine != Routine.ZeroDay
             && Rng.Unit() < scene.Config.WallChance;
         var surface = mayUseWall ? (Rng.Bool() ? Surface.Left : Surface.Right) : Surface.Bottom;
         scene.SetStage(surface, work, scene.Cat.Size);
@@ -804,6 +1175,7 @@ public sealed class App : IDisposable
         scene.Cat.Wearing = PickOutfit(scene.Config);
         // A hacker wears shades.
         if (routine is Routine.Crawl or Routine.IdleCrawl or Routine.ZeroDay) scene.Cat.Wearing.Add(Accessory.Glasses);
+        if (routine == Routine.ZeroDay && scene.Config.ZeroDaySound) zeroDaySound.Start(scene.Config.ZeroDayVolume);
         if (behavior is IdleCrawlBehavior idle)
         {
             idle.RequestTargets = () => CrawlTargets(currentScreen ?? TargetScreen());
@@ -814,7 +1186,7 @@ public sealed class App : IDisposable
         scene.Cat.Visible = true;
         var outfit = string.Join(" + ", scene.Cat.Wearing.Select(a => a.ToString().ToLowerInvariant()).OrderBy(s => s));
         ActivityLog.Shared.Cat($"came out: {routine.Name()} on the {scene.Surface.Name()} of {screen.DeviceName.TrimStart('\\', '.')}"
-            + (outfit.Length == 0 ? "" : $", wearing {outfit}") + (force ? " (menu pick)" : ""));
+            + (outfit.Length == 0 ? "" : $", wearing {outfit}") + (force && routine != Routine.Ask ? " (menu pick)" : ""));
 
         overlay.ClearAll();
         overlay.Show(Topmost);
@@ -827,6 +1199,7 @@ public sealed class App : IDisposable
 
     private void StopBehavior()
     {
+        bool wasAsking = behavior is AskBehavior;
         if (behavior != null) ActivityLog.Shared.Cat("went in");
         clock.Stop();
         input.Stop();
@@ -846,6 +1219,11 @@ public sealed class App : IDisposable
         takeover.Clear();
         shownTakeoverOpacity = 0;
         shownRecipe = -1;
+        // The card goes with the cat, whatever sent the cat away. An answer
+        // with no card is not the cat's, so a new routine leaves it running.
+        if (wasAsking) asker.Cancel();
+        answerCard?.Dismiss();
+        zeroDaySound.Stop();
         petDwell = 0;
         petLeft = 0;
         petArmed = true;
@@ -893,6 +1271,7 @@ public sealed class App : IDisposable
             {
                 exitHandled = true;
                 input.Stop();
+                zeroDaySound.Stop();
                 takeover.Clear();
                 shownTakeoverOpacity = 0;
                 takeoverDirty = true;
@@ -1092,6 +1471,12 @@ public sealed class App : IDisposable
         if (disposed) return;
         disposed = true;
         try { StopBehavior(); } catch { }
+        questions.Dispose();
+        asker.Cancel();
+        zeroDaySound.Stop();
+        StayAwake.Set(false);
+        badgeTimer.Dispose();
+        answerCard?.Dispose();
         ActivityLog.Shared.Stop();
         idleTimer.Stop();
         scheduleTimer.Stop();
@@ -1101,6 +1486,7 @@ public sealed class App : IDisposable
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         tray.Visible = false;
         tray.Dispose();
+        if (trayIconHandle != IntPtr.Zero) Native.DestroyIcon(trayIconHandle);
         menu.Dispose();
         overlay.Dispose();
         takeover.Dispose();

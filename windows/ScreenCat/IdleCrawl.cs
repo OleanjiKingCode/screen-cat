@@ -24,7 +24,7 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
 {
     private enum Stage
     {
-        Countdown, Entering, Growing, Moving, Zapping, Resting, Switching, Arriving, Exiting,
+        Entering, Growing, Moving, Zapping, Resting, Switching, Arriving, Exiting,
         // Zero Day only: glitch on, then hop to a random app.
         Hacking, Hopping,
     }
@@ -65,9 +65,6 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     /// Jump to a random app, a few places left or right. True if it did.
     public Func<bool>? RequestRandomApp;
     private double elapsed;
-    /// Seconds left on the "starting in" countdown, so the click that started
-    /// it is over before any touch can end it.
-    public double CountdownLeft { get; private set; }
     private double exitTime;
     private double exitStartSize;
     public bool IsExiting => stage == Stage.Exiting;
@@ -92,7 +89,7 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
     /// Kept so `BeginExit` can be called from outside an update.
     private double sceneCatSize;
 
-    public IdleCrawlBehavior(Scene scene, List<RectD> targets, double speed = 1, double? maxDuration = null, double countdown = 0,
+    public IdleCrawlBehavior(Scene scene, List<RectD> targets, double speed = 1, double? maxDuration = null,
         bool catless = false)
     {
         Speed = speed;
@@ -106,11 +103,13 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
         cat.Visible = true;
         direction = start.X < scene.Stage.MidX ? 1 : -1;
         WalkIn(scene);
-        if (countdown > 0)
+        // Zero Day has no cat and no walk in: the screen goes at once.
+        if (catless)
         {
-            CountdownLeft = countdown;
             cat.Visible = false;
-            stage = Stage.Countdown;
+            takeoverOn = true;
+            timer = Rng.Range(1.5, 3);
+            stage = Stage.Hacking;
         }
     }
 
@@ -219,26 +218,6 @@ public sealed class IdleCrawlBehavior : IBehavior, IBreachSource
 
         switch (stage)
         {
-            case Stage.Countdown:
-                CountdownLeft -= dt;
-                if (CountdownLeft <= 0)
-                {
-                    CountdownLeft = 0;
-                    if (Catless)
-                    {
-                        takeoverOn = true;
-                        NextStyle();
-                        timer = Rng.Range(1.5, 3);
-                        stage = Stage.Hacking;
-                    }
-                    else
-                    {
-                        cat.Visible = true;
-                        stage = Stage.Entering;
-                    }
-                }
-                break;
-
             case Stage.Hacking:
                 timer -= dt;
                 burstTimer -= dt;
