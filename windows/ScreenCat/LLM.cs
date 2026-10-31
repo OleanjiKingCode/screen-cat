@@ -307,8 +307,10 @@ public sealed class Asker
     /// or the reason there is none (not logged in, out of usage, and so on).
     public static Answer ParseCli(string output, int status, string errors)
     {
-        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Reverse())
+        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = lines.Length - 1; i >= 0; i--)
         {
+            string line = lines[i];
             JsonObject? obj;
             try { obj = JsonNode.Parse(line) as JsonObject; } catch { continue; }
             if (obj == null || Str(obj["type"]) != "result") continue;
