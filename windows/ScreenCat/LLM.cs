@@ -102,10 +102,11 @@ public sealed class Asker
 
     public void Cancel()
     {
-        generation++;
+        Interlocked.Increment(ref generation);
         try { if (process is { HasExited: false } p) p.Kill(entireProcessTree: true); } catch { }
         process = null;
         cancel?.Cancel();
+        cancel?.Dispose();
         cancel = null;
     }
 
@@ -113,13 +114,14 @@ public sealed class Asker
     public void Ask(Question question, Config config, Action<Answer> done)
     {
         Cancel();
-        int mine = generation;
+        int mine = Volatile.Read(ref generation);
         void Finish(Answer answer) => ui.Post(_ =>
         {
-            if (generation != mine) return;
-            // Once only: a timeout and the reader can both get here.
-            generation++;
+            // Once only: a timeout and the reader can both get here, and
+            // without a UI thread (`--ask`) they can get here at the same time.
+            if (Interlocked.CompareExchange(ref generation, mine + 1, mine) != mine) return;
             process = null;
+            cancel?.Dispose();
             cancel = null;
             done(answer);
         }, null);
@@ -221,6 +223,7 @@ public sealed class Asker
             int code = 0;
             try { code = p.ExitCode; } catch { }
             finish(ParseCli(outText, code, errText));
+            p.Dispose();
         });
         Task.Delay(TimeSpan.FromSeconds(180)).ContinueWith(_ =>
         {
@@ -475,8 +478,10 @@ public sealed class QuestionWatch : IDisposable
     private readonly HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
     private DateTime since;
     /// Windows screenshot tools copy the picture and save it too, so one
-    /// screenshot would be asked about twice. One picture per few seconds.
+    /// screenshot would be asked about twice: once from the clipboard, once
+    /// from the folder. The second of the pair is skipped.
     private DateTime lastImageAt = DateTime.MinValue;
+    private bool lastImageFromFolder;
     private SynchronizationContext? ui;
 
     public QuestionWatch()
@@ -519,7 +524,9 @@ public sealed class QuestionWatch : IDisposable
     };
 
     /// What is on the clipboard now, for the menu's one-off ask. Null when it
-    /// is empty, private, or a file. Must run on the UI thread.
+    /// is empty, private, or a file. Must run on the UI thread. Throws
+    /// `ExternalException` when another app has the clipboard open, so the
+    /// watcher tries again instead of losing the copy.
     public static Question? ClipboardQuestion()
     {
         var data = Clipboard.GetDataObject();
@@ -529,15 +536,18 @@ public sealed class QuestionWatch : IDisposable
         if (formats.Contains("CanIncludeInClipboardHistory") && IsZero(data.GetData("CanIncludeInClipboardHistory"))) return null;
         if (data.GetDataPresent(DataFormats.FileDrop)) return null;
 
-        string text = (data.GetData(DataFormats.UnicodeText) as string ?? "").Trim();
+        // WinForms answers null, not an error, when the clipboard is busy.
+        string? raw = data.GetData(DataFormats.UnicodeText) as string;
+        if (raw == null && data.GetDataPresent(DataFormats.UnicodeText)) throw new ExternalException("clipboard busy");
+        string text = (raw ?? "").Trim();
         bool hasImage = data.GetDataPresent("PNG") || data.GetDataPresent(DataFormats.Bitmap);
         // "Copy image" in a browser can also put the image's address there.
         // The picture is the question, not the link.
         bool justALink = (text.StartsWith("http://") || text.StartsWith("https://")) && !text.Any(char.IsWhiteSpace);
         if (text.Length >= 2 && !(hasImage && justALink)) return new Question.Text(text);
         if (!hasImage) return null;
-        using var image = ReadImage(data);
-        return image != null && Asker.PngForUpload(image) is byte[] png ? new Question.Image(png, "copied image") : null;
+        using var image = ReadImage(data) ?? throw new ExternalException("clipboard busy");
+        return Asker.PngForUpload(image) is byte[] png ? new Question.Image(png, "copied image") : null;
     }
 
     private static bool IsZero(object? value)
@@ -553,7 +563,10 @@ public sealed class QuestionWatch : IDisposable
         {
             // Browsers and the Snipping Tool put a PNG there; keep its alpha.
             if (data.GetData("PNG") is MemoryStream png) return System.Drawing.Image.FromStream(png);
-            if (data.GetData(DataFormats.Bitmap) is System.Drawing.Image bmp) return new Bitmap(bmp);
+            if (data.GetData(DataFormats.Bitmap) is System.Drawing.Image bmp)
+            {
+                using (bmp) return new Bitmap(bmp);
+            }
         }
         catch { }
         return null;
@@ -584,18 +597,19 @@ public sealed class QuestionWatch : IDisposable
             if (t.Value == lastText || (IsOwnText?.Invoke(t.Value) ?? false)) return;
             lastText = t.Value;
         }
-        else if (!TakeImageSlot())
+        else if (!TakeImageSlot(fromFolder: false))
         {
             return;
         }
         OnQuestion?.Invoke(question);
     }
 
-    private bool TakeImageSlot()
+    private bool TakeImageSlot(bool fromFolder)
     {
-        if ((DateTime.UtcNow - lastImageAt).TotalSeconds < 5) return false;
+        bool pair = fromFolder != lastImageFromFolder && (DateTime.UtcNow - lastImageAt).TotalSeconds < 5;
         lastImageAt = DateTime.UtcNow;
-        return true;
+        lastImageFromFolder = fromFolder;
+        return !pair;
     }
 
     // Screenshots -------------------------------------------------------------
@@ -640,8 +654,8 @@ public sealed class QuestionWatch : IDisposable
             // look twice, back on the UI thread.
             void Changed(object? sender, FileSystemEventArgs e) => ui?.Post(_ =>
             {
-                Later(500, Scan);
-                Later(2000, Scan);
+                App.Later(500, Scan);
+                App.Later(2000, Scan);
             }, null);
             watch.Created += Changed;
             watch.Renamed += (s, e) => Changed(s, e);
@@ -652,18 +666,6 @@ public sealed class QuestionWatch : IDisposable
         {
             ActivityLog.Shared.Cat($"llm: cannot watch {screenshotFolder} for screenshots: {e.Message}");
         }
-    }
-
-    private static void Later(int ms, Action action)
-    {
-        var timer = new System.Windows.Forms.Timer { Interval = ms };
-        timer.Tick += (_, _) =>
-        {
-            timer.Stop();
-            timer.Dispose();
-            action();
-        };
-        timer.Start();
     }
 
     private void Scan()
@@ -686,7 +688,7 @@ public sealed class QuestionWatch : IDisposable
                     png = Asker.PngForUpload(image);
                 }
                 seen.Add(file);
-                if (png == null || !TakeImageSlot()) continue;
+                if (png == null || !TakeImageSlot(fromFolder: true)) continue;
                 OnQuestion?.Invoke(new Question.Image(png, "screenshot"));
             }
             catch

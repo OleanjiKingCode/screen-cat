@@ -22,7 +22,6 @@ public sealed class ZeroDaySound
 
     public sealed class Synth
     {
-        public float SampleRateF = SampleRate;
         public volatile float Volume = 0.25f;
         /// Where the gain is heading: 1 while playing, 0 to fade out.
         public volatile float Target;
@@ -57,7 +56,7 @@ public sealed class ZeroDaySound
 
         public float Next()
         {
-            float sr = SampleRateF;
+            const float sr = SampleRate;
             const float twoPi = MathF.PI * 2;
             Gain += (Target - Gain) * 0.0004f;
 
@@ -182,14 +181,19 @@ public sealed class ZeroDaySound
         var samples = new short[BufferFrames * Channels];
         try
         {
+            bool ok = true;
             for (int i = 0; i < BufferCount; i++)
             {
                 data[i] = Marshal.AllocHGlobal(bytes);
                 headers[i] = Marshal.AllocHGlobal(headerSize);
                 Marshal.StructureToPtr(new Native.WAVEHDR { lpData = data[i], dwBufferLength = (uint)bytes }, headers[i], false);
-                Native.waveOutPrepareHeader(wave, headers[i], (uint)headerSize);
+                ok &= Native.waveOutPrepareHeader(wave, headers[i], (uint)headerSize) == 0;
             }
-            while (true)
+            // When Stop was asked for. The fade runs on the buffers coming
+            // back, so if they stop coming back (a headset unplugged) the
+            // clock still ends it, like the Mac's 0.35 s engine stop.
+            long stopAskedAt = 0;
+            while (ok)
             {
                 for (int i = 0; i < BufferCount; i++)
                 {
@@ -202,15 +206,23 @@ public sealed class ZeroDaySound
                         samples[f * 2 + 1] = s;
                     }
                     Marshal.Copy(samples, 0, data[i], samples.Length);
-                    Native.waveOutWrite(wave, headers[i], (uint)headerSize);
+                    if (Native.waveOutWrite(wave, headers[i], (uint)headerSize) != 0)
+                    {
+                        ok = false;
+                        break;
+                    }
                     queued[i] = true;
                 }
-                // Faded out: hand the device back, unless a new Start came in.
-                if (synth.Target == 0 && synth.Gain < 0.0005f)
+                if (synth.Target != 0) stopAskedAt = 0;
+                else if (stopAskedAt == 0) stopAskedAt = Environment.TickCount64;
+                bool faded = synth.Gain < 0.0005f || (stopAskedAt != 0 && Environment.TickCount64 - stopAskedAt > 600);
+                // Faded out, or the device failed: hand the device back,
+                // unless a new Start came in.
+                if (!ok || (synth.Target == 0 && faded))
                 {
                     lock (gate)
                     {
-                        if (synth.Target == 0)
+                        if (!ok || synth.Target == 0)
                         {
                             thread = null;
                             break;
@@ -222,6 +234,12 @@ public sealed class ZeroDaySound
         }
         finally
         {
+            // A header that would not prepare never enters the loop above, so
+            // the slot is freed here too, or no later Start could play.
+            lock (gate)
+            {
+                if (thread == Thread.CurrentThread) thread = null;
+            }
             Native.waveOutReset(wave);
             for (int i = 0; i < BufferCount; i++)
             {

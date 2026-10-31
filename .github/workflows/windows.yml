@@ -14,11 +14,12 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: write
     defaults:
       run:
         shell: pwsh
@@ -60,14 +61,30 @@ jobs:
           path: windows/ScreenCat/selftest
           if-no-files-found: ignore
 
+  # Only this job can write to the repository, and only for a published release.
+  release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ScreenCat-win-x64
+          path: out
+
       - name: Attach to the release
-        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
           $version = $env:TAG.TrimStart('v')
           $zip = "ScreenCat-windows-$version.zip"
-          Compress-Archive -Path publish\ScreenCat.exe, publish\Assets\CREDIT.txt -DestinationPath $zip
-          gh release upload $env:TAG $zip --clobber
+          $files = Get-ChildItem out -Recurse -File | Where-Object { $_.Name -in 'ScreenCat.exe', 'CREDIT.txt' }
+          Compress-Archive -Path $files.FullName -DestinationPath $zip
+          gh release upload $env:TAG $zip --clobber --repo $env:GITHUB_REPOSITORY
           (Get-FileHash $zip -Algorithm SHA256).Hash

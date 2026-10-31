@@ -139,9 +139,32 @@ public static class SelfTest
         var walker = new CatState { Size = 96, Clip = Clip.SideWalk, IsDog = true };
         var cat = new CatState { Size = 96, Clip = Clip.SideWalk };
         Check(walker.CycleDistance < cat.CycleDistance, "the dog takes shorter steps than the cat");
-        using var icon = dog.TrayImage(32);
-        Check(icon != null, "the tray icon can be drawn from the dog");
+        foreach (int size in new[] { 16, 20, 32 })
+        {
+            using var icon = dog.TrayImage(size);
+            Check(icon != null && FitsInside(icon), $"the {size} px tray icon shows the whole dog");
+        }
         return dog.IsLoaded ? dog : null;
+    }
+
+    /// True when the whole pet fits in the icon. The pet is taller than it is
+    /// wide, so a pet drawn too big runs off the left and right edges; one
+    /// that fits leaves both edge columns clear and still fills the top half.
+    private static bool FitsInside(Bitmap icon)
+    {
+        bool edgesClear = true, upperHalfDrawn = false;
+        for (int y = 0; y < icon.Height; y++)
+        {
+            if (icon.GetPixel(0, y).A > 0 || icon.GetPixel(icon.Width - 1, y).A > 0) edgesClear = false;
+        }
+        for (int x = 0; x < icon.Width; x++)
+        {
+            for (int y = 0; y < icon.Height / 2; y++)
+            {
+                if (icon.GetPixel(x, y).A > 0) upperHalfDrawn = true;
+            }
+        }
+        return edgesClear && upperHalfDrawn;
     }
 
     /// Every clip, with and without the outfit, plus the bubble, bowl and ball.
@@ -393,7 +416,7 @@ public static class SelfTest
     private static void Sound(string path)
     {
         var (peak, rms) = ZeroDaySound.WriteSample(path, 4);
-        Check(peak > 0.05 && peak <= 1 && rms > 0.01, $"zero day sound renders (peak {peak:0.000}, rms {rms:0.000} at full volume)");
+        Check(peak > 0.05 && peak <= 1 && rms > 0.01, $"zero day sound renders (peak {peak:0.000}, rms {rms:0.000} at the default volume)");
         Line($"wrote {Path.GetFileName(path)}");
     }
 

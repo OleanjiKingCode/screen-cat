@@ -186,13 +186,15 @@ public sealed class App : IDisposable
 
         ApplySteppedOut();
         questions.OnQuestion = q => Ask(q);
-        questions.IsOwnText = text => lastAnswer.Length > 0 && lastAnswer.Contains(text);
+        // The card's text box hands out Windows line ends, the answer has plain ones.
+        questions.IsOwnText = text => lastAnswer.Length > 0 && lastAnswer.Contains(text.Replace("\r\n", "\n"));
         ApplyLlmMode();
         if (firstRun && !demo) Later(1500, ShowWelcome);
         Schedule(demo ? 2 : scene.Config.FirstAppearanceDelay);
     }
 
-    private static void Later(int ms, Action action)
+    /// Runs `action` once on the UI thread, `ms` from now.
+    public static void Later(int ms, Action action)
     {
         var timer = new System.Windows.Forms.Timer { Interval = ms };
         timer.Tick += (_, _) =>
@@ -355,25 +357,25 @@ public sealed class App : IDisposable
         m.Items.Add(modeItem);
 
         // Menu picks force the routine: if you ask for the cat, you get the cat.
-        var now = new ToolStripMenuItem("Play now");
-        now.DropDownItems.Add("Take a walk", null, (_, _) => Start(Routine.Stroll, force: true));
-        now.DropDownItems.Add("Have a nap", null, (_, _) => Start(Routine.Nap, force: true));
-        now.DropDownItems.Add("Chase a ball", null, (_, _) => Start(Routine.Ball, force: true));
-        now.DropDownItems.Add("Beg for food", null, (_, _) => Start(Routine.Hungry, force: true));
-        now.DropDownItems.Add("Ask to play", null, (_, _) => Start(Routine.Play, force: true));
-        now.DropDownItems.Add(new ToolStripSeparator());
-        now.DropDownItems.Add("Break some apps", null, (_, _) => Start(Routine.Crawl, force: true));
-        now.DropDownItems.Add("Crawl until I touch something", null, (_, _) => BeginIdleCrawl(1.0));
+        var playNow = new ToolStripMenuItem("Play now");
+        playNow.DropDownItems.Add("Take a walk", null, (_, _) => Start(Routine.Stroll, force: true));
+        playNow.DropDownItems.Add("Have a nap", null, (_, _) => Start(Routine.Nap, force: true));
+        playNow.DropDownItems.Add("Chase a ball", null, (_, _) => Start(Routine.Ball, force: true));
+        playNow.DropDownItems.Add("Beg for food", null, (_, _) => Start(Routine.Hungry, force: true));
+        playNow.DropDownItems.Add("Ask to play", null, (_, _) => Start(Routine.Play, force: true));
+        playNow.DropDownItems.Add(new ToolStripSeparator());
+        playNow.DropDownItems.Add("Break some apps", null, (_, _) => Start(Routine.Crawl, force: true));
+        playNow.DropDownItems.Add("Crawl until I touch something", null, (_, _) => BeginIdleCrawl(1.0));
         // Zero Day is a show, not a lasting mode: it runs once and the saved
         // mode stays what it was. No countdown: it starts at once, and input
         // in the first 1.5 s (letting go of the mouse after the click) does
         // not count.
-        now.DropDownItems.Add("Zero Day (3 min hack)", null, (_, _) =>
+        playNow.DropDownItems.Add("Zero Day (3 min hack)", null, (_, _) =>
         {
             ActivityLog.Shared.Cat("Zero Day started from the menu");
             BeginIdleCrawl(1.5, Routine.ZeroDay);
         });
-        m.Items.Add(now);
+        m.Items.Add(playNow);
         m.Items.Add(new ToolStripSeparator());
 
         llmItem = new ToolStripMenuItem("LLM mode");
@@ -636,9 +638,10 @@ public sealed class App : IDisposable
         var card = answerCard ?? MakeAnswerCard();
         var head = scene.ToScreen.Apply(new Vec(sitting.Spot.X, sitting.Spot.Y + scene.Cat.Size * 1.05));
         var area = scene.ScreenRect;
+        // Before it shows, so not even its first frame lands in a capture.
+        card.Follow(Topmost, scene.Config.HideFromCapture);
         card.ShowThinking(question, new Point((int)head.X, (int)head.Y),
             new Rectangle((int)area.MinX, (int)area.MinY, (int)area.Width, (int)area.Height), scene.Ui);
-        card.Follow(Topmost, scene.Config.HideFromCapture);
         ActivityLog.Shared.Cat($"llm: asked about {question.Summary}");
         var asked = DateTime.Now;
         var c = scene.Config;
@@ -768,7 +771,7 @@ public sealed class App : IDisposable
     /// The tooltip says what the dots mean.
     private void RefreshTray()
     {
-        int size = SystemInformation.SmallIconSize.Width >= 24 ? 32 : 16;
+        int size = Math.Max(16, SystemInformation.SmallIconSize.Width);
         using var bmp = sheet?.TrayImage(size);
         if (bmp == null)
         {

@@ -92,11 +92,13 @@ the tray cat is, with a button to also open it at login.
 Turn it on in **LLM mode > Turn LLM mode on**. From then on:
 
 - **Copy** any text and the pet walks on with a card: THINKING, then the
-  answer. The card does not take focus from your app. Click it to select
-  text; Esc or the cross closes it; drag it by its edge or heading.
+  answer. The card shows without taking focus from your app, and COPY and
+  the cross work without taking it either. Click the text to select and copy
+  part of it; Esc or the cross closes the card; drag it by its edge or heading.
 - **Take a screenshot** with Win+Shift+S, Win+Print Screen or the Snipping
   Tool and it answers what is in it. Those tools copy the picture and save it
-  too, so one screenshot is asked about once, not twice.
+  too, so a saved screenshot that follows a copied picture within 5 seconds
+  (or the other way round) is skipped: one screenshot, one question.
 - **Show answer box** off: no pet and no card. The answer goes on the
   clipboard, and a dot on the tray cat shows blue while it thinks, then green
   (copied) or red (no answer; the tooltip says why).

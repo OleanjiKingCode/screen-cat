@@ -274,13 +274,18 @@ public sealed class SpriteSheet : IDisposable
         }
         if (maxX < 0) return null;
         int w = maxX - minX + 1, h = maxY - minY + 1;
-        int scale = Math.Max(1, size / Math.Max(w, h));
+        // Whole-pixel steps when the icon is bigger than the pet. A 16 px icon
+        // is smaller than the pet itself, so there it is shrunk smoothly to fit.
+        bool shrink = Math.Max(w, h) > size;
+        double scale = shrink ? (double)size / Math.Max(w, h) : size / Math.Max(w, h);
+        int dw = Math.Max(1, (int)Math.Round(w * scale)), dh = Math.Max(1, (int)Math.Round(h * scale));
         var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using var g = Graphics.FromImage(bmp);
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+        g.InterpolationMode = shrink ? System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic
+                                     : System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
         g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
         // Centred across, standing on the bottom edge.
-        var to = new Rectangle((size - w * scale) / 2, size - h * scale, w * scale, h * scale);
+        var to = new Rectangle((size - dw) / 2, size - dh, dw, dh);
         g.DrawImage(frame, to, new Rectangle(minX, minY, w, h), GraphicsUnit.Pixel);
         return bmp;
     }

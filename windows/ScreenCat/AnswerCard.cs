@@ -35,6 +35,8 @@ public sealed class AnswerCard : Form
     private double ui = 1;
     private Font? bodyFont;
     private Font? labelFont;
+    private readonly ToolTip tips = new();
+    private bool topmost = true;
 
     public AnswerCard(Rgba outline)
     {
@@ -58,7 +60,7 @@ public sealed class AnswerCard : Form
         closeButton.Text = "✕";
         closeButton.Cursor = Cursors.Hand;
         closeButton.Click += (_, _) => CloseByUser();
-        new ToolTip().SetToolTip(closeButton, "Close (Esc)");
+        tips.SetToolTip(closeButton, "Close (Esc)");
 
         body.ReadOnly = true;
         body.Multiline = true;
@@ -110,6 +112,30 @@ public sealed class AnswerCard : Form
         }
     }
 
+    /// COPY and the cross work without taking focus from your app. A click on
+    /// the text does take it, so you can select and copy part of the answer.
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == Native.WM_MOUSEACTIVATE && Visible)
+        {
+            var at = PointToClient(Cursor.Position);
+            if ((copyButton.Visible && copyButton.Bounds.Contains(at)) || closeButton.Bounds.Contains(at))
+            {
+                m.Result = (IntPtr)Native.MA_NOACTIVATE;
+                return;
+            }
+        }
+        base.WndProc(ref m);
+    }
+
+    /// The card lays itself out in pixels for the cat's screen, so WinForms
+    /// must not scale it again when it lands on a screen with another scale.
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        e.Cancel = true;
+        base.OnDpiChanged(e);
+    }
+
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (keyData == Keys.Escape)
@@ -139,10 +165,13 @@ public sealed class AnswerCard : Form
     /// Topmost or not, and in screenshots or not, the same as the cat.
     public void Follow(bool topmost, bool hideFromCapture)
     {
-        Native.SetWindowPos(Handle, topmost ? Native.HWND_TOPMOST : Native.HWND_NOTOPMOST, 0, 0, 0, 0,
-            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        this.topmost = topmost;
         Native.SetWindowDisplayAffinity(Handle, hideFromCapture ? Native.WDA_EXCLUDEFROMCAPTURE : Native.WDA_NONE);
+        Raise();
     }
+
+    private void Raise() => Native.SetWindowPos(Handle, topmost ? Native.HWND_TOPMOST : Native.HWND_NOTOPMOST, 0, 0, 0, 0,
+        Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
 
     /// Shows the card above `anchor` (screen pixels, the top of the cat's
     /// head) while the answer is on its way, with what was asked in grey.
@@ -164,7 +193,10 @@ public sealed class AnswerCard : Form
         dots = 0;
         heading.Text = "THINKING";
         thinkingTimer.Start();
-        if (!Visible) Show();
+        if (Visible) return;
+        Show();
+        // Above the cat's window, which went to the top when the cat came out.
+        Raise();
     }
 
     private static string Shorten(string line) => line.Length > 160 ? line.Substring(0, 160) + "…" : line;
@@ -299,6 +331,7 @@ public sealed class AnswerCard : Form
             copiedTimer.Dispose();
             bodyFont?.Dispose();
             labelFont?.Dispose();
+            tips.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -325,7 +358,6 @@ public sealed class ApiKeyDialog : Form
         AutoScaleDimensions = new SizeF(96, 96);
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        Font = new Font("Segoe UI", 9f);
 
         var layout = new FlowLayoutPanel
         {
