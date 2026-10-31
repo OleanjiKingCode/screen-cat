@@ -76,7 +76,7 @@ Left or right click the tray cat. The same groups as the Mac menu.
   show or hide the answer box, copy answers to the clipboard, set your API key.
   The last line says where answers come from.
 - **Stepped out (PC never sleeps)**: an amber dot on the tray cat while it is on.
-- **Show in screenshots && recordings**: ticked, the pet and its answer card
+- **Show in screenshots & recordings**: ticked, the pet and its answer card
   show in captures.
 - **Open at login**.
 - **Activity log**: open today's log, or the folder with all of them.
@@ -106,7 +106,7 @@ key...**), or else from the `claude` command (Claude Code) with its login.
 Screen Cat looks for `claude.exe` in `%USERPROFILE%\.local\bin`, the npm shim
 `claude.cmd` in `%APPDATA%\npm`, the WinGet links folder and `PATH`; set
 `llmClaudePath` if it is somewhere else. It runs with no tools, no MCP
-servers, no CLAUDE.md and no memory, from an empty temp folder.
+servers, no CLAUDE.md and no memory, from its own temp folder.
 
 Never sent: anything a password manager marks as private on the clipboard
 (`ExcludeClipboardContentFromMonitorProcessing`, `Clipboard Viewer Ignore`, or
