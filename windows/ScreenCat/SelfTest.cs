@@ -255,18 +255,23 @@ public static class SelfTest
         scene.SetStage(Surface.Bottom, new RectD(0, 0, 1920, 1040), scene.Cat.Size);
         var ask = (AskBehavior)Helpers.MakeBehavior(Routine.Ask, scene);
         double startY = scene.Cat.Pos.Y, highest = startY;
-        bool sat = false, finished = false;
-        for (double t = 0; t < 60 && !finished; t += 1.0 / 60)
+        bool finished = false;
+        double? satAt = null;
+        // The walk in is long on a wide screen, so the cat is released two
+        // seconds after it first sits, not at a fixed time.
+        for (double t = 0; t < 120 && !finished; t += 1.0 / 60)
         {
-            if (t > 15) ask.Release();
+            if (satAt is double at && t > at + 2) ask.Release();
             scene.Cat.Advance(1.0 / 60);
             finished = ask.Update(1.0 / 60, scene);
             highest = Math.Max(highest, scene.Cat.Pos.Y);
-            if (t > 12 && t < 15 && scene.Cat.Clip is Clip.SitIdle or Clip.StandIdle && Math.Abs(scene.Cat.Pos.X - ask.Spot.X) < 1) sat = true;
+            if (satAt == null && scene.Cat.Clip == Clip.SitIdle && Math.Abs(scene.Cat.Pos.X - ask.Spot.X) < 1) satAt = t;
         }
+        bool sat = satAt != null;
         bool offStage = scene.Cat.Pos.X < scene.Stage.MinX || scene.Cat.Pos.X > scene.Stage.MaxX;
         Check(sat && finished && offStage && highest - startY <= scene.Cat.Size * 0.35 + 1,
-            "the LLM cat sits at its spot under the card, never climbs, and leaves by the side once released");
+            $"the LLM cat sits at its spot under the card (after {satAt ?? -1:0.0}s), never climbs, and leaves by the side once released"
+            + (sat && finished && offStage ? "" : $" [sat {sat}, finished {finished}, off stage {offStage}, rose {highest - startY:0.0}px]"));
     }
 
     /// Zero Day has no cat and no countdown: the glitch is on at once, it
