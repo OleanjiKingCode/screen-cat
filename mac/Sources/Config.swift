@@ -80,6 +80,9 @@ struct Config {
     var petSeconds: CGFloat = 1.0
 
     // Look ---------------------------------------------------------------
+    /// "cat" or "dog". The colour settings below recolour the cat; the dog
+    /// keeps its own coat.
+    var pet = "cat"
     var furColor = "#A87BE0"
     var furShadeColor = "#7E52B3"
     var outlineColor = "#2E1B47"
@@ -101,7 +104,7 @@ struct Config {
     /// Start the nonstop crawl after this long with no mouse, trackpad or
     /// keyboard input, whatever the mode. Any input stops it.
     var idleCrawl = true
-    var idleCrawlSeconds: CGFloat = 120
+    var idleCrawlSeconds: CGFloat = 1800
     /// How big the cat grows when the idle crawl starts, with a glow you can
     /// watch, before the screen turns into a glitch.
     var growScale: CGFloat = 2
@@ -111,6 +114,32 @@ struct Config {
     /// at `zeroDaySpeed`.
     var glitchSpeed: CGFloat = 2
     var zeroDaySpeed: CGFloat = 8
+    /// Zero Day's background sound, and how loud it is (0 to 1).
+    var zeroDaySound = true
+    var zeroDayVolume: CGFloat = 0.25
+    /// Stepped out: keep the Mac awake and the screen on until you turn it
+    /// off. Works with any mode.
+    var steppedOut = false
+
+    // LLM mode ----------------------------------------------------------------
+    /// Answer what you copy, and screenshots you take, with Claude. Runs the
+    /// `claude` command line tool with the login it already has.
+    var llmMode = false
+    var llmFromClipboard = true
+    var llmFromScreenshots = true
+    /// Put each answer on the clipboard as it arrives, ready to paste.
+    var llmCopyAnswer = true
+    /// Show the cat and the answer card. Off, answers only go to the
+    /// clipboard, and the menu bar icon says when one is ready.
+    var llmShowAnswer = true
+    var llmModel = "claude-opus-5-5"
+    /// How hard Claude thinks: "low", "medium", "high", "xhigh" or "max".
+    var llmEffort = "medium"
+    /// Close the answer this long after it arrives, unless the pointer is on
+    /// it. 0 keeps it up until you close it.
+    var llmAnswerSeconds: CGFloat = 120
+    /// Full path to `claude`, if it is not in one of the usual places.
+    var llmClaudePath = ""
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary of apps, sleep, Bluetooth and what is running,
@@ -154,6 +183,7 @@ struct Config {
         func strs(_ key: String) -> [String]? { raw[key] as? [String] }
 
         c.sizeDivisor           = num("sizeDivisor")           ?? c.sizeDivisor
+        c.pet                   = str("pet")                   ?? c.pet
         c.firstAppearanceDelay  = num("firstAppearanceDelay")  ?? c.firstAppearanceDelay
         c.minGapSeconds         = num("minGapSeconds")         ?? c.minGapSeconds
         c.maxGapSeconds         = num("maxGapSeconds")         ?? c.maxGapSeconds
@@ -200,12 +230,25 @@ struct Config {
         c.glitchStyleSeconds    = num("glitchStyleSeconds")    ?? c.glitchStyleSeconds
         c.glitchSpeed           = num("glitchSpeed")           ?? c.glitchSpeed
         c.zeroDaySpeed          = num("zeroDaySpeed")          ?? c.zeroDaySpeed
+        c.zeroDaySound          = bool("zeroDaySound")         ?? c.zeroDaySound
+        c.zeroDayVolume         = num("zeroDayVolume")         ?? c.zeroDayVolume
+        c.steppedOut            = bool("steppedOut")           ?? c.steppedOut
+        c.llmMode               = bool("llmMode")              ?? c.llmMode
+        c.llmFromClipboard      = bool("llmFromClipboard")     ?? c.llmFromClipboard
+        c.llmFromScreenshots    = bool("llmFromScreenshots")   ?? c.llmFromScreenshots
+        c.llmCopyAnswer         = bool("llmCopyAnswer")        ?? c.llmCopyAnswer
+        c.llmShowAnswer         = bool("llmShowAnswer")        ?? c.llmShowAnswer
+        c.llmModel              = str("llmModel")              ?? c.llmModel
+        c.llmEffort             = str("llmEffort")             ?? c.llmEffort
+        c.llmAnswerSeconds      = num("llmAnswerSeconds")      ?? c.llmAnswerSeconds
+        c.llmClaudePath         = str("llmClaudePath")         ?? c.llmClaudePath
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
         c.activityLogDays       = num("activityLogDays")       ?? c.activityLogDays
         c.opacity               = num("opacity")               ?? c.opacity
 
         c.sizeDivisor = max(2, min(60, c.sizeDivisor))
+        if !["cat", "dog"].contains(c.pet) { c.pet = "cat" }
         c.roamHeight = max(0.05, min(1, c.roamHeight))
         c.groundBias = max(1, min(8, c.groundBias))
         c.maxSlope = max(0, min(2, c.maxSlope))
@@ -227,7 +270,10 @@ struct Config {
         c.glitchStyleSeconds = max(5, c.glitchStyleSeconds)
         c.glitchSpeed = max(0.25, min(16, c.glitchSpeed))
         c.zeroDaySpeed = max(1, min(16, c.zeroDaySpeed))
+        c.zeroDayVolume = max(0, min(1, c.zeroDayVolume))
         c.growScale = max(1, min(4, c.growScale))
+        c.llmAnswerSeconds = max(0, c.llmAnswerSeconds)
+        if !["low", "medium", "high", "xhigh", "max"].contains(c.llmEffort) { c.llmEffort = "medium" }
         c.chainChance = max(0, min(1, c.chainChance))
         c.glassesChance = max(0, min(1, c.glassesChance))
         return c
@@ -253,6 +299,7 @@ struct Config {
         let d = Config()
         let dict: [String: Any] = [
             "sizeDivisor": d.sizeDivisor,
+            "pet": d.pet,
             "firstAppearanceDelay": d.firstAppearanceDelay,
             "minGapSeconds": d.minGapSeconds,
             "maxGapSeconds": d.maxGapSeconds,
@@ -299,6 +346,17 @@ struct Config {
             "glitchStyleSeconds": d.glitchStyleSeconds,
             "glitchSpeed": d.glitchSpeed,
             "zeroDaySpeed": d.zeroDaySpeed,
+            "zeroDaySound": d.zeroDaySound,
+            "zeroDayVolume": d.zeroDayVolume,
+            "steppedOut": d.steppedOut,
+            "llmMode": d.llmMode,
+            "llmFromClipboard": d.llmFromClipboard,
+            "llmFromScreenshots": d.llmFromScreenshots,
+            "llmCopyAnswer": d.llmCopyAnswer,
+            "llmShowAnswer": d.llmShowAnswer,
+            "llmModel": d.llmModel,
+            "llmEffort": d.llmEffort,
+            "llmAnswerSeconds": d.llmAnswerSeconds,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,

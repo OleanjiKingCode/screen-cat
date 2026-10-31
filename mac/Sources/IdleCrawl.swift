@@ -18,7 +18,7 @@ import AppKit
 /// `maxSlope`, zig-zagging up anything steeper instead of rising straight.
 final class IdleCrawlBehavior: Behavior, BreachSource {
     private enum Stage {
-        case countdown, entering, growing, moving, zapping, resting, switching, arriving, exiting
+        case entering, growing, moving, zapping, resting, switching, arriving, exiting
         // Zero Day only: glitch on, then hop to a random app.
         case hacking, hopping
     }
@@ -55,9 +55,6 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     /// Jump to a random app, a few places left or right. True if it did.
     var requestRandomApp: (() -> Bool)?
     private var elapsed: CGFloat = 0
-    /// Seconds left on the "starting in" countdown, so the click that started
-    /// it is over before any touch can end it.
-    private(set) var countdownLeft: CGFloat = 0
     private var exitTime: CGFloat = 0
     private var exitStartSize: CGFloat = 0
     var isExiting: Bool { stage == .exiting }
@@ -80,7 +77,7 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
     var requestNextApp: ((CGFloat) -> Bool)?
 
     init(scene: Scene, targets: [CGRect], speed: CGFloat = 1, maxDuration: CGFloat? = nil,
-         countdown: CGFloat = 0, catless: Bool = false) {
+         catless: Bool = false) {
         self.speed = speed
         self.maxDuration = maxDuration
         self.catless = catless
@@ -91,10 +88,12 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
         cat.visible = true
         direction = start.x < scene.stage.midX ? 1 : -1
         walkIn(scene)
-        if countdown > 0 {
-            countdownLeft = countdown
+        // Zero Day has no cat and no walk in: the screen goes at once.
+        if catless {
             cat.visible = false
-            stage = .countdown
+            takeoverOn = true
+            timer = CGFloat.random(in: 1.5...3)
+            stage = .hacking
         }
     }
 
@@ -191,21 +190,6 @@ final class IdleCrawlBehavior: Behavior, BreachSource {
         if catless { cat.visible = false }
 
         switch stage {
-        case .countdown:
-            countdownLeft -= dt
-            if countdownLeft <= 0 {
-                countdownLeft = 0
-                if catless {
-                    takeoverOn = true
-                    nextStyle()
-                    timer = CGFloat.random(in: 1.5...3)
-                    stage = .hacking
-                } else {
-                    cat.visible = true
-                    stage = .entering
-                }
-            }
-
         case .hacking:
             timer -= dt
             burstTimer -= dt

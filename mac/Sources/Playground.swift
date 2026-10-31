@@ -124,7 +124,8 @@ final class PlaygroundView: NSView {
         c.roamHeight = 0.2
         c.groundBias = 2
         scene.config = c
-        sheet = SpriteSheet(resources: resourcesDirectory(), palette: c.spritePalette)
+        sheet = SpriteSheet(resources: resourcesDirectory(), config: c)
+        scene.cat.isDog = c.pet == "dog"
         super.init(frame: frame)
         layoutStage()
     }

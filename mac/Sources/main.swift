@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The idle crawl's full-screen glitch, under the cat.
     private var takeover: TakeoverView!
     private var takeoverFrame = 0
+    private let zeroDaySound = ZeroDaySound()
     private var shownRecipe = -1
     private var statusItem: NSStatusItem!
     private let scene = Scene()
@@ -53,6 +54,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The shrink-away exit has already put you back in your app.
     private var exitHandled = false
 
+    // LLM mode: what you copy or screenshot goes to Claude, and the cat sits
+    // under the answer.
+    private let asker = Asker()
+    private let questions = QuestionWatch()
+    private var answerPanel: AnswerPanel?
+    /// The newest answer, so copying part of it is not asked about again.
+    private var lastAnswer = ""
+    /// After the cat in the menu bar: 💭 while an answer with no card is on
+    /// its way, then ✅ or ⚠️ for a few seconds.
+    private var badge = ""
+    private var badgeTimer: Timer?
+    /// The pet's silhouette, shown in the menu bar.
+    private var menuIcon: NSImage?
+
     /// `--selftest <png>`: run the real on-screen window, force a walk, then
     /// photograph our own window to prove what actually reached the screen.
     private func runSelfTest(to path: String) {
@@ -83,6 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        // No settings file yet means this is the very first launch.
+        let firstRun = !FileManager.default.fileExists(atPath: Config.fileURL.path)
         Config.writeDefaultFileIfMissing()
         scene.config = Config.load()
 
@@ -169,7 +186,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             runSelfTest(to: CommandLine.arguments[i + 1])
             return
         }
+        applySteppedOut()
+        questions.onQuestion = { [weak self] question in self?.ask(question) }
+        questions.isOwnText = { [weak self] text in
+            guard let answer = self?.lastAnswer, !answer.isEmpty else { return false }
+            return answer.contains(text)
+        }
+        applyLLMMode()
+        if firstRun { showWelcome() }
         schedule(after: demo ? 2 : scene.config.firstAppearanceDelay)
+    }
+
+    /// The app has no window and no Dock icon, so on the first launch say
+    /// where it went.
+    private func showWelcome() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Screen Cat is running"
+        alert.informativeText = """
+        Your pet lives in the menu bar: look for the little cat at the top right of the screen. \
+        Click it to pick a cat or a dog, change modes, turn on LLM mode, or quit.
+
+        The pet comes out on its own every few seconds. Nothing it does touches your apps.
+        """
+        alert.icon = NSApp.applicationIconImage
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Also open at login")
+        if alert.runModal() == .alertSecondButtonReturn { LoginItem.setEnabled(true) }
     }
 
     // MARK: - Config
@@ -183,27 +226,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // .none keeps the cat off screenshots, screen recordings and anything
         // being screen-shared, while you still see it on the glass.
         window.sharingType = c.hideFromCapture ? .none : .readOnly
+        // The answer card follows the cat: in captures only if the cat is.
+        answerPanel?.sharingType = window.sharingType
+        answerPanel?.level = window.level
     }
 
     /// The sheet is recoloured at load time, so it is only rebuilt when the
     /// colour settings actually change.
     private func loadSprites() {
         let c = scene.config
-        let key = [c.furColor, c.furShadeColor, c.outlineColor,
+        let key = [c.pet, c.furColor, c.furShadeColor, c.outlineColor,
                    c.innerColor, c.eyeColor, c.ballColor].joined(separator: "|")
         guard key != loadedPaletteKey else { return }
-        let sheet = SpriteSheet(resources: resourcesDirectory(), palette: c.spritePalette)
+        let sheet = SpriteSheet(resources: resourcesDirectory(), config: c)
         guard sheet.isLoaded else {
             NSLog("Screen Cat: could not load sprites from \(resourcesDirectory().path)")
             return
         }
         view.sheet = sheet
+        scene.cat.isDog = c.pet == "dog"
         loadedPaletteKey = key
+        menuIcon = sheet.menuBarIcon()
+        refreshStatusTitle()
     }
 
     @objc private func reloadConfig() {
         scene.config = Config.load()
         applyConfig()
+        applySteppedOut()
+        applyLLMMode()
         loadSprites()
         view.needsDisplay = true
     }
@@ -241,75 +292,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🐈"
+        statusItem.button?.imagePosition = .imageLeft
         statusItem.button?.toolTip = "Screen Cat"
+        menuIcon = view.sheet?.menuBarIcon()
+        refreshStatusTitle()
+
+        func add(_ menu: NSMenu, _ title: String, _ action: Selector?, tag: Int = 0, key: String = "") {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.tag = tag
+            menu.addItem(item)
+        }
+        func submenu(_ menu: NSMenu, _ title: String, tag: Int) -> NSMenu {
+            let sub = NSMenu()
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.tag = tag
+            item.submenu = sub
+            menu.addItem(item)
+            return sub
+        }
 
         let menu = NSMenu()
         menu.delegate = self
-        let status = NSMenuItem(title: "Waiting", action: nil, keyEquivalent: "")
-        status.isEnabled = false
-        status.tag = 200
-        menu.addItem(status)
+        add(menu, "Waiting", nil, tag: 200)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Take a walk", action: #selector(runStroll), keyEquivalent: "")
-        menu.addItem(withTitle: "Have a nap", action: #selector(runNap), keyEquivalent: "")
-        menu.addItem(withTitle: "Chase a ball", action: #selector(runBall), keyEquivalent: "")
-        menu.addItem(withTitle: "Beg for food", action: #selector(runHungry), keyEquivalent: "")
-        menu.addItem(withTitle: "Ask to play", action: #selector(runPlay), keyEquivalent: "")
-        menu.addItem(withTitle: "Break some apps (crawler)", action: #selector(runCrawl), keyEquivalent: "")
-        menu.addItem(withTitle: "Crawl until I touch something", action: #selector(runIdleCrawl), keyEquivalent: "")
+        add(menu, "Pause", #selector(togglePause), tag: 100)
         menu.addItem(.separator())
-        let modes = NSMenu()
-        for (tag, title) in [(500, "Normal"), (501, "Crawler"), (502, "Zero Day (3 min hack, starts now)")] {
-            let item = NSMenuItem(title: title, action: #selector(pickMode(_:)), keyEquivalent: "")
-            item.tag = tag
-            item.target = self
-            modes.addItem(item)
+
+        let pet = submenu(menu, "Pet", tag: 810)
+        add(pet, "Cat", #selector(pickPet(_:)), tag: 800)
+        add(pet, "Dog", #selector(pickPet(_:)), tag: 801)
+        let mode = submenu(menu, "Mode", tag: 510)
+        add(mode, "Normal", #selector(pickMode(_:)), tag: 500)
+        add(mode, "Crawler (breaks windows, just paint)", #selector(pickMode(_:)), tag: 501)
+        let now = submenu(menu, "Play now", tag: 520)
+        add(now, "Take a walk", #selector(runStroll))
+        add(now, "Have a nap", #selector(runNap))
+        add(now, "Chase a ball", #selector(runBall))
+        add(now, "Beg for food", #selector(runHungry))
+        add(now, "Ask to play", #selector(runPlay))
+        now.addItem(.separator())
+        add(now, "Break some apps", #selector(runCrawl))
+        add(now, "Crawl until I touch something", #selector(runIdleCrawl))
+        add(now, "Zero Day (3 min hack)", #selector(pickMode(_:)), tag: 502)
+        menu.addItem(.separator())
+
+        let llm = submenu(menu, "LLM mode", tag: 710)
+        add(llm, Self.llmModeTitle(false), #selector(toggleLLMMode), tag: 700)
+        add(llm, "Ask about what I copied now", #selector(askAboutClipboard))
+        llm.addItem(.separator())
+        add(llm, "Show answer box", #selector(toggleShowAnswers), tag: 702)
+        add(llm, "Copy answers to clipboard", #selector(toggleCopyAnswers), tag: 701)
+        llm.addItem(.separator())
+        add(llm, "Set API key…", #selector(setAPIKey))
+        add(llm, "Answers come from", nil, tag: 703)
+        menu.addItem(.separator())
+
+        add(menu, "Stepped out (Mac never sleeps)", #selector(toggleSteppedOut), tag: 600)
+        add(menu, "Show in screenshots & recordings", #selector(toggleCapture), tag: 300)
+        add(menu, "Open at login", #selector(toggleLogin), tag: 400)
+        menu.addItem(.separator())
+
+        add(menu, "Open playground", #selector(openPlayground))
+        let logs = submenu(menu, "Activity log", tag: 0)
+        add(logs, "Open today's log", #selector(openActivityLog))
+        add(logs, "Show all logs", #selector(showActivityLogs))
+        let settings = submenu(menu, "Settings", tag: 0)
+        add(settings, "Edit settings file…", #selector(editSettings))
+        add(settings, "Reload settings", #selector(reloadConfig))
+        menu.addItem(.separator())
+        add(menu, "Quit Screen Cat", #selector(quit), key: "q")
+
+        func target(_ menu: NSMenu) {
+            for item in menu.items {
+                if item.action != nil { item.target = self }
+                if let sub = item.submenu { target(sub) }
+            }
         }
-        let modeItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
-        modeItem.submenu = modes
-        menu.addItem(modeItem)
-        menu.addItem(withTitle: "Open playground", action: #selector(openPlayground), keyEquivalent: "")
-        menu.addItem(.separator())
-        let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
-        pauseItem.tag = 100
-        menu.addItem(pauseItem)
-        menu.addItem(.separator())
-        let capture = NSMenuItem(title: "Show in screenshots & recordings",
-                                 action: #selector(toggleCapture), keyEquivalent: "")
-        capture.tag = 300
-        menu.addItem(capture)
-        let login = NSMenuItem(title: "Open at login", action: #selector(toggleLogin), keyEquivalent: "")
-        login.tag = 400
-        menu.addItem(login)
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Open today's activity log", action: #selector(openActivityLog), keyEquivalent: "")
-        menu.addItem(withTitle: "Show all activity logs", action: #selector(showActivityLogs), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Edit settings…", action: #selector(editSettings), keyEquivalent: "")
-        menu.addItem(withTitle: "Reload settings", action: #selector(reloadConfig), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Screen Cat", action: #selector(quit), keyEquivalent: "q")
-        for item in menu.items where item.action != nil { item.target = self }
+        target(menu)
         statusItem.menu = menu
     }
 
-    /// Refresh the top line each time the menu opens, so it is obvious why the
-    /// cat is or is not showing up.
-    func menuWillOpen(_ menu: NSMenu) {
-        scene.config = Config.load()
-        menu.item(withTag: 300)?.state = scene.config.hideFromCapture ? .off : .on
-        menu.item(withTag: 400)?.state = LoginItem.isEnabled ? .on : .off
-        if let modes = menu.items.first(where: { $0.title == "Mode" })?.submenu {
-            modes.item(withTag: 500)?.state = scene.config.mode == "crawler" ? .off : .on
-            modes.item(withTag: 501)?.state = scene.config.mode == "crawler" ? .on : .off
+    /// Finds an item by tag anywhere in the menu, submenus included.
+    private func menuItem(_ tag: Int, in menu: NSMenu? = nil) -> NSMenuItem? {
+        for item in (menu ?? statusItem.menu)?.items ?? [] {
+            if item.tag == tag { return item }
+            if let sub = item.submenu, let found = menuItem(tag, in: sub) { return found }
         }
-        guard let item = menu.item(withTag: 200) else { return }
+        return nil
+    }
+
+    /// Refresh the ticks and the top line each time the menu opens, so it is
+    /// obvious why the pet is or is not showing up.
+    func menuWillOpen(_ menu: NSMenu) {
+        let c = Config.load()
+        scene.config = c
+        func tick(_ tag: Int, _ on: Bool) { menuItem(tag)?.state = on ? .on : .off }
+        tick(300, !c.hideFromCapture)
+        tick(400, LoginItem.isEnabled)
+        tick(600, StayAwake.isOn)
+        tick(701, c.llmCopyAnswer)
+        tick(702, c.llmShowAnswer)
+        tick(500, c.mode != "crawler")
+        tick(501, c.mode == "crawler")
+        tick(800, c.pet == "cat")
+        tick(801, c.pet == "dog")
+        // The submenu titles carry the current choice, so the menu reads at
+        // a glance without opening each one.
+        menuItem(810)?.title = "Pet: \(c.pet == "dog" ? "Dog" : "Cat")"
+        menuItem(510)?.title = "Mode: \(c.mode == "crawler" ? "Crawler" : "Normal")"
+        menuItem(710)?.title = "LLM mode: \(c.llmMode ? "On" : "Off")"
+        menuItem(700)?.title = Self.llmModeTitle(c.llmMode)
+        menuItem(703)?.title = APIKey.isSet ? "Answers come from your API key" : "Answers come from your Claude Code login"
+        menuItem(703)?.isEnabled = false
+        guard let item = menuItem(200) else { return }
+        item.isEnabled = false
         if paused {
             item.title = "Paused"
         } else if away {
             item.title = "Away while the screen is off"
-        } else if let why = Watching.reason(scene.config, screen: targetScreen()) {
+        } else if let why = Watching.reason(c, screen: targetScreen()) {
             item.title = why.prefix(1).uppercased() + why.dropFirst()
         } else if behavior != nil {
             item.title = "Out and about"
@@ -399,6 +500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         config.activates = true
         NSWorkspace.shared.openApplication(at: url, configuration: config)
         switchedApps = true
+        zeroDaySound.hop()
         ActivityLog.shared.cat("hopped to \(next.localizedName ?? "an app") (\(places) to the \(side > 0 ? "right" : "left"))")
         return true
     }
@@ -452,7 +554,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // mode stays what it was.
         if sender.tag == 502 {
             ActivityLog.shared.cat("Zero Day started from the menu")
-            beginIdleCrawl(grace: 3.2, routine: .zeroDay)
+            // No countdown: it starts at once, and input in the first 1.5 s
+            // (letting go of the trackpad after the click) does not count.
+            beginIdleCrawl(grace: 1.5, routine: .zeroDay)
             return
         }
         setMode(sender.tag == 501 ? "crawler" : "normal")
@@ -475,6 +579,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         playground?.show()
     }
 
+    /// Cat or dog, saved, and swapped in at once, even mid-walk.
+    @objc private func pickPet(_ sender: NSMenuItem) {
+        let pet = sender.tag == 801 ? "dog" : "cat"
+        scene.config.pet = pet
+        Config.update("pet", to: pet)
+        loadSprites()
+        view.needsDisplay = true
+        ActivityLog.shared.cat("pet set to \(pet)")
+    }
+
+    /// Paste your own Anthropic API key. It goes in the keychain. With it,
+    /// answers come from the Claude API; without it, from Claude Code.
+    @objc private func setAPIKey() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Anthropic API key"
+        alert.informativeText = """
+        With a key, LLM mode calls the Claude API directly, and you pay Anthropic for what you use. \
+        Without one, it uses the claude command (Claude Code) and its login. \
+        The key is kept in your Mac's keychain, not in the settings file. Get one at console.anthropic.com.
+        """
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        field.placeholderString = APIKey.isSet ? "A key is saved. Paste a new one to replace it." : "sk-ant-..."
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        if APIKey.isSet { alert.addButton(withTitle: "Remove key") }
+        alert.window.initialFirstResponder = field
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let key = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { return }
+            if APIKey.save(key) {
+                ActivityLog.shared.cat("llm: api key saved")
+            } else {
+                NSSound.beep()
+            }
+        case .alertThirdButtonReturn:
+            APIKey.delete()
+            ActivityLog.shared.cat("llm: api key removed")
+        default:
+            break
+        }
+    }
+
     @objc private func togglePause(_ sender: NSMenuItem) {
         paused.toggle()
         sender.title = paused ? "Resume" : "Pause"
@@ -495,6 +644,178 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Config.update("hideFromCapture", to: scene.config.hideFromCapture)
         applyConfig()
         sender.state = scene.config.hideFromCapture ? .off : .on
+    }
+
+    /// Ticked, the Mac never sleeps and the screen stays on. Saved to
+    /// settings, so it is still on after a restart.
+    @objc private func toggleSteppedOut(_ sender: NSMenuItem) {
+        scene.config.steppedOut.toggle()
+        Config.update("steppedOut", to: scene.config.steppedOut)
+        applySteppedOut()
+        sender.state = StayAwake.isOn ? .on : .off
+    }
+
+    /// The cup next to the cat in the menu bar says the Mac is being kept awake.
+    private func applySteppedOut() {
+        let wasOn = StayAwake.isOn
+        StayAwake.set(scene.config.steppedOut)
+        refreshStatusTitle()
+        guard wasOn != StayAwake.isOn else { return }
+        ActivityLog.shared.cat(StayAwake.isOn ? "stepped out: Mac stays awake" : "stepped out off: Mac may sleep")
+    }
+
+    // MARK: - LLM mode
+
+    /// Says what clicking it will do, so turning the mode off is obvious.
+    private static func llmModeTitle(_ on: Bool) -> String {
+        on ? "Turn LLM mode off" : "Turn LLM mode on (answer what I copy or screenshot)"
+    }
+
+    @objc private func toggleLLMMode(_ sender: NSMenuItem) {
+        scene.config.llmMode.toggle()
+        Config.update("llmMode", to: scene.config.llmMode)
+        applyLLMMode()
+        sender.title = Self.llmModeTitle(scene.config.llmMode)
+    }
+
+    /// Ticked, each answer goes on the clipboard as it arrives, ready to paste.
+    @objc private func toggleCopyAnswers(_ sender: NSMenuItem) {
+        scene.config.llmCopyAnswer.toggle()
+        Config.update("llmCopyAnswer", to: scene.config.llmCopyAnswer)
+        sender.state = scene.config.llmCopyAnswer ? .on : .off
+    }
+
+    /// Unticked, there is no cat and no card: each answer goes straight to
+    /// the clipboard. Unticking it while a card is up closes the card.
+    @objc private func toggleShowAnswers(_ sender: NSMenuItem) {
+        scene.config.llmShowAnswer.toggle()
+        Config.update("llmShowAnswer", to: scene.config.llmShowAnswer)
+        sender.state = scene.config.llmShowAnswer ? .on : .off
+        if !scene.config.llmShowAnswer, behavior is AskBehavior {
+            answerPanel?.dismiss()
+            closeAnswer()
+        }
+    }
+
+    /// Listens only while the mode is on. Turning it on never answers what
+    /// was already on the clipboard.
+    private func applyLLMMode() {
+        let c = scene.config
+        guard c.llmMode else {
+            if questions.isRunning { ActivityLog.shared.cat("llm mode off") }
+            questions.stop()
+            return
+        }
+        if !questions.isRunning { ActivityLog.shared.cat("llm mode on") }
+        questions.start(clipboard: c.llmFromClipboard, screenshots: c.llmFromScreenshots)
+    }
+
+    /// A one-off, with or without LLM mode: ask about the clipboard now.
+    @objc private func askAboutClipboard() {
+        guard let question = QuestionWatch.clipboardQuestion() else {
+            NSSound.beep()
+            return
+        }
+        ask(question, fromMenu: true)
+    }
+
+    /// The cat walks on and sits, the card goes up above where it will sit,
+    /// and the answer fills the card when Claude replies. A new question while
+    /// the cat is already sitting reuses the same cat and card.
+    private func ask(_ question: Question, fromMenu: Bool = false) {
+        guard !away, fromMenu || !paused else { return }
+        scene.config = Config.load()
+        guard scene.config.llmShowAnswer else { askQuietly(question); return }
+        // A quiet question still on its way is replaced by this one.
+        if !badge.isEmpty { setBadge("") }
+        // A cat already walking off cannot sit under a new card: send a new one.
+        if (behavior as? AskBehavior)?.isLeaving ?? true { start(.ask, force: true) }
+        guard let sitting = behavior as? AskBehavior else { return }
+        let panel = answerPanel ?? makeAnswerPanel()
+        let head = CGPoint(x: sitting.spot.x, y: sitting.spot.y + scene.cat.size * 1.05)
+            .applying(scene.surface.transform(for: scene.screenRect))
+        panel.showThinking(question, above: head, within: scene.screenRect)
+        ActivityLog.shared.cat("llm: asked about \(question.summary)")
+        let asked = Date()
+        let c = scene.config
+        asker.ask(question, config: c) { [weak self] answer in
+            guard let self else { return }
+            let took = String(format: "%.1fs", Date().timeIntervalSince(asked))
+            switch answer {
+            case .text(let text):
+                ActivityLog.shared.cat("llm: answered in \(took)")
+                self.lastAnswer = text
+                panel.showAnswer(text, closeAfter: c.llmAnswerSeconds)
+                // Through the card's own copy, so the watcher knows it is ours.
+                if c.llmCopyAnswer { panel.copyAnswer() }
+            case .failed(let why):
+                ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
+                panel.showError(why, closeAfter: c.llmAnswerSeconds)
+            }
+        }
+    }
+
+    /// No cat and no card: the answer goes straight to the clipboard, and
+    /// the menu bar icon shows it is coming, then that it is ready.
+    private func askQuietly(_ question: Question) {
+        ActivityLog.shared.cat("llm: asked about \(question.summary), no card")
+        setBadge("💭")
+        let asked = Date()
+        asker.ask(question, config: scene.config) { [weak self] answer in
+            guard let self else { return }
+            let took = String(format: "%.1fs", Date().timeIntervalSince(asked))
+            switch answer {
+            case .text(let text):
+                ActivityLog.shared.cat("llm: answered in \(took), copied")
+                self.lastAnswer = text
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                self.questions.ownChange = NSPasteboard.general.changeCount
+                self.statusItem.button?.toolTip = "Screen Cat: answer copied"
+                self.setBadge("✅", for: 4)
+            case .failed(let why):
+                ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
+                self.statusItem.button?.toolTip = "Screen Cat: \(why)"
+                self.setBadge("⚠️", for: 6)
+            }
+        }
+    }
+
+    private func setBadge(_ mark: String, for seconds: TimeInterval? = nil) {
+        badgeTimer?.invalidate()
+        badge = mark
+        refreshStatusTitle()
+        guard let seconds else { return }
+        badgeTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            self?.badge = ""
+            self?.statusItem.button?.toolTip = "Screen Cat"
+            self?.refreshStatusTitle()
+        }
+    }
+
+    /// The pet, a cup while the Mac is kept awake, then the answer badge.
+    /// Falls back to an emoji if the sprites did not load.
+    private func refreshStatusTitle() {
+        guard let button = statusItem?.button else { return }
+        button.image = menuIcon
+        let extras = (StayAwake.isOn ? "☕" : "") + badge
+        button.title = menuIcon == nil ? "🐈" + extras : extras
+    }
+
+    /// Sends the sitting cat off and drops any answer still coming.
+    private func closeAnswer() {
+        asker.cancel()
+        (behavior as? AskBehavior)?.release()
+    }
+
+    private func makeAnswerPanel() -> AnswerPanel {
+        let panel = AnswerPanel(palette: scene.config.extras)
+        panel.sharingType = window.sharingType
+        panel.level = window.level
+        panel.onClose = { [weak self] in self?.closeAnswer() }
+        panel.onCopy = { [weak self] in self?.questions.ownChange = NSPasteboard.general.changeCount }
+        answerPanel = panel
+        return panel
     }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {
@@ -533,11 +854,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         takeoverFrame += 1
         // Zero Day moves fast, so it renders at 30 fps; the idle crawl at 20.
         guard takeoverFrame % (idle.catless ? 2 : 3) == 0 else { return }
-        if idle.countdownLeft > 0 {
-            takeover.show(countdownRecipe(Int(ceil(idle.countdownLeft))), time: idle.countdownLeft, seed: 7,
-                          pulse: 0, opacity: 1)
-            return
-        }
         if idle.takeoverOpacity <= 0.01 {
             takeover.clear()
             return
@@ -660,7 +976,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Begging faces the viewer, so it only makes sense the right way up.
         // Begging and the play invite both face you and need a clickable
         // bubble the right way up, so they stay on the bottom edge.
-        let mayUseWall = routine != .hungry && routine != .play && routine != .crawl
+        let mayUseWall = routine != .hungry && routine != .play && routine != .crawl && routine != .ask
             && routine != .idleCrawl && routine != .zeroDay
             && Double.random(in: 0..<1) < scene.config.wallChance
         let surface: Surface = mayUseWall ? (Bool.random() ? .left : .right) : .bottom
@@ -683,6 +999,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scene.cat.wearing = pickOutfit(scene.config)
         // A hacker wears shades.
         if [.crawl, .idleCrawl, .zeroDay].contains(routine) { scene.cat.wearing.insert(.glasses) }
+        // The invisible self-test stays silent too.
+        if routine == .zeroDay, scene.config.zeroDaySound, !CommandLine.arguments.contains("--idle-selftest") {
+            zeroDaySound.start(volume: Float(scene.config.zeroDayVolume))
+        }
         if let idle = behavior as? IdleCrawlBehavior {
             idle.requestTargets = { [weak self] in
                 guard let self else { return [] }
@@ -694,7 +1014,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scene.cat.visible = true
         let outfit = scene.cat.wearing.map { "\($0)" }.sorted().joined(separator: " + ")
         ActivityLog.shared.cat("came out: \(routine.rawValue) on the \(scene.surface) of \(screen.localizedName)"
-                               + (outfit.isEmpty ? "" : ", wearing \(outfit)") + (force ? " (menu pick)" : ""))
+                               + (outfit.isEmpty ? "" : ", wearing \(outfit)") + (force && routine != .ask ? " (menu pick)" : ""))
         NSLog("Screen Cat: %@ on the %@ at %.0f,%.0f size %.0fpt, stage %@ band %.0f",
               routine.rawValue, String(describing: scene.surface),
               scene.cat.pos.x, scene.cat.pos.y, scene.cat.size,
@@ -710,6 +1030,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func stopBehavior() {
+        let wasAsking = behavior is AskBehavior
         if behavior != nil {
             NSLog("Screen Cat: routine ended")
             ActivityLog.shared.cat("went in")
@@ -728,7 +1049,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view?.zap = nil
         view?.aura = nil
         takeover?.clear()
+        // The card goes with the cat, whatever sent the cat away. An answer
+        // with no card is not the cat's, so a new routine leaves it running.
+        if wasAsking { asker.cancel() }
+        answerPanel?.dismiss()
         shownRecipe = -1
+        zeroDaySound.stop()
         petDwell = 0
         petLeft = 0
         petArmed = true
@@ -756,6 +1082,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if idle.isExiting, !exitHandled {
                 exitHandled = true
                 takeover.clear()
+                zeroDaySound.stop()
                 returnToStartApp()
             }
         }
@@ -905,8 +1232,18 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--preview" {
     exit(0)
 }
 
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--app-icon" {
+    renderAppIcon(to: CommandLine.arguments[2])
+    exit(0)
+}
+
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--takeover" {
     renderTakeoverSheet(to: CommandLine.arguments[2])
+    exit(0)
+}
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--zeroday-sound" {
+    ZeroDaySound.writeSample(to: CommandLine.arguments[2],
+                             seconds: CommandLine.arguments.count >= 4 ? Double(CommandLine.arguments[3]) ?? 10 : 10)
     exit(0)
 }
 if CommandLine.arguments.contains("--takeover-bench") {
@@ -984,6 +1321,34 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--playground" 
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
         print("wrote \(CommandLine.arguments[2])")
     }
+    exit(0)
+}
+
+// `--ask <text>` or `--ask-image <file>` sends one question through LLM mode's
+// asker, with the real settings, and prints the answer. No cat, no card.
+if CommandLine.arguments.count >= 3, ["--ask", "--ask-image"].contains(CommandLine.arguments[1]) {
+    let arg = CommandLine.arguments[2]
+    let question: Question
+    if CommandLine.arguments[1] == "--ask" {
+        question = .text(arg)
+    } else if let image = NSImage(contentsOfFile: arg), let png = pngForUpload(image) {
+        question = .image(png, from: "screenshot")
+    } else {
+        print("could not read \(arg)")
+        exit(1)
+    }
+    let asker = Asker()
+    let started = Date()
+    var finished = false
+    asker.ask(question, config: Config.load()) { answer in
+        switch answer {
+        case .text(let text): print(text)
+        case .failed(let why): print("FAILED: \(why)")
+        }
+        print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))
+        finished = true
+    }
+    while !finished { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
     exit(0)
 }
 

@@ -22,12 +22,13 @@ func runSimulation(routine: Routine, to path: String) {
     let scene = Scene()
     scene.config = cfg
     scene.cat.size = max(24, stage.height / cfg.sizeDivisor)
+    scene.cat.isDog = cfg.pet == "dog"
     scene.setStage(surface: surface, screen: stage, catSize: scene.cat.size)
 
     let window = makeOverlayWindow(frame: stage)
     let view = OverlayView(frame: CGRect(origin: .zero, size: stage.size))
     view.scene = scene
-    view.sheet = SpriteSheet(resources: resourcesDirectory(), palette: cfg.spritePalette)
+    view.sheet = SpriteSheet(resources: resourcesDirectory(), config: cfg)
     view.extras = cfg.extras
     view.drawShadows = cfg.shadow
     window.contentView = view

@@ -18,6 +18,8 @@ final class CatState {
     var visible = false
     /// What it has on for this visit. Picked when a routine starts.
     var wearing: Set<Accessory> = []
+    /// The dog takes shorter steps than the cat, so a cycle covers less ground.
+    var isDog = false
 
     func setClip(_ c: Clip) {
         guard c != clip else { return }
@@ -32,9 +34,9 @@ final class CatState {
     /// How far the cat travels per full cycle of the current walk or run.
     var cycleDistance: CGFloat {
         switch clip {
-        case .run: return drawnSize * 2.0
+        case .run: return drawnSize * (isDog ? 0.88 : 2.0)
         case .frontWalk: return drawnSize * 0.9
-        default: return drawnSize * 1.15
+        default: return drawnSize * (isDog ? 0.6 : 1.15)
         }
     }
 

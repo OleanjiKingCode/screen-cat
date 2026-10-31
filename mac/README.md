@@ -101,7 +101,7 @@ mode drives both, and it is saved as `mode` in the settings.
   touched. Windows of apps on `blockedApps`, and windows mostly hidden behind
   others, are skipped. **Break some apps (crawler)** runs one now in any mode.
 
-**Idle crawl.** After `idleCrawlSeconds` (120) with no mouse, trackpad or
+**Idle crawl.** After `idleCrawlSeconds` (1800, half an hour) with no mouse, trackpad or
 keyboard input, in **any** mode (normal included), the cat walks onto the
 screen, stops, and grows to `growScale` (2x) in pulses inside a ring of light.
 Then the **whole screen** (menu bar and Dock too) turns into a glitch, and
@@ -122,15 +122,19 @@ display sleeps. Only real hardware input counts. **Crawl until I touch
 something** starts one now. `idleCrawl: false` turns it off.
 
 **Zero Day.** **Mode > Zero Day (3 min hack, starts now)** is a three-minute
-hacked-computer show with no cat at all. After a three-second "ZERO DAY IN 3"
-countdown (so the click that started it does not stop it), the whole screen
-glitches at `zeroDaySpeed` (8x) with bursts of red flashes, rendering at 30 fps.
-Every 1.5 to 3 seconds it jumps to a random app one to three places left or
-right (the third app to the left, then the second to the right, and so on);
-macOS slides to it, the glitch dims for 0.8 s so you glimpse the app, then a
-new style takes over. It ends after three minutes or at the first touch, with
-the glitch gone at once and you back in the app you started in. It does not
-change the saved mode. `--idle-selftest zeroday` runs it invisibly.
+hacked-computer show with no cat at all. It starts the moment you pick it (input
+in the first 1.5 seconds, letting go of the trackpad, does not count). The whole
+screen glitches at `zeroDaySpeed` (8x) with bursts of red flashes, rendering at
+30 fps, over a quiet background sound made live by the app: a low throbbing
+drone, quick data beeps, bursts of static crackle and a rising whoosh on every
+hop (`zeroDaySound`, `zeroDayVolume` 0.25). Every 1.5 to 3 seconds it jumps to
+a random app one to three places left or right (the third app to the left,
+then the second to the right, and so on); macOS slides to it, the glitch dims
+for 0.8 s so you glimpse the app, then a new style takes over. It ends after
+three minutes or at the first touch, with the glitch and sound gone at once and
+you back in the app you started in. It does not change the saved mode.
+`--idle-selftest zeroday` runs it invisibly and silently;
+`--zeroday-sound out.wav [seconds]` writes the sound to a file.
 
 The glitch renders at half resolution, 20 frames a second, on its own layer
 under the cat; the slowest style takes about 12 ms a frame. See every style:
@@ -142,6 +146,55 @@ and log it: `--idle-selftest`. The short per-window glitches of crawler mode:
 (Terminal, Browser, Notes, Music, Files). Buttons run a walk, nap, ball, feed or
 a crawl on demand; between them it picks its own routines for the current mode.
 Render it headless with `--playground out.png [seconds]`.
+
+## LLM mode
+
+Choose **LLM mode > Turn LLM mode on** in the menu (**Turn LLM mode off** to
+stop). From then on, whatever you copy, and every screenshot you take, goes to
+Claude. The cat walks on, sits, and holds up a card: "THINKING..." with what you asked, then
+the answer. It works out what you want: a question gets answered, an equation
+or sum gets solved with the steps, a claim gets checked, a word gets explained,
+code or an error gets explained or fixed. The answer is plain text you can
+select. Each answer also goes on the clipboard as it arrives, ready to paste
+(**Copy answers to clipboard** in the menu, `llmCopyAnswer`, on by default);
+**COPY** on the card copies it again. Close the card with the ✕ or Esc,
+and the cat walks off. Otherwise it closes `llmAnswerSeconds` (120) after the
+answer arrives, but never while the pointer is on it. You can drag the card.
+A new question while the cat is sitting reuses the same card.
+
+**Show answer box** (`llmShowAnswer`, on by default) controls the cat and the
+card. Untick it and neither appears: each answer goes straight to the
+clipboard, whatever **Copy answers to clipboard** says, and the cat in the menu
+bar shows 💭 while it thinks, then ✅ when the answer is ready to paste (⚠️ if
+there is no answer; hover the icon for why). Unticking it while a card is up
+closes the card.
+
+**Ask about what I copied** asks about the clipboard once, with or without LLM
+mode.
+
+- **How it talks to Claude**: it runs the `claude` command line tool (Claude
+  Code) with the login you already have, so there is no API key to set up. It
+  runs with no tools, no MCP servers, no CLAUDE.md and no memory, from an empty
+  folder. An answer takes about 7 to 10 seconds. If `claude` is not in
+  `~/.local/bin`, `/opt/homebrew/bin` or `/usr/local/bin`, set `llmClaudePath`.
+- **Screenshots** are picked up from the folder the Screenshot app saves to and
+  from the Desktop, by the tag macOS puts on every screenshot. macOS asks once
+  for access to the Desktop folder. The file only appears after the floating
+  thumbnail goes, about 5 seconds; turn the thumbnail off in the Screenshot
+  app's Options for a faster answer. A screenshot copied to the clipboard
+  (Control in the shortcut) is picked up at once.
+- **What is never sent**: anything a password manager marks as private, files
+  copied in Finder, what was already on the clipboard when you turned the mode
+  on, the same text twice in a row, and text copied out of the cat's own card.
+  Everything else you copy is sent to Anthropic while the mode is on.
+- **Screenshots & recordings**: the card follows the cat. With **Show in
+  screenshots & recordings** unticked (the default), neither shows up in
+  captures or screen sharing; ticked, both do. LLM mode works either way.
+- Pause stops it from answering; a menu pick of **Ask about what I copied**
+  still works while paused.
+
+Test it without the cat: `--ask "2x^2 - 8x + 6 = 0"` or
+`--ask-image screenshot.png` prints the answer.
 
 ## Activity log
 
@@ -258,17 +311,52 @@ it, and those are never requested.
 
 ## Menu bar
 
-- **Take a walk / Have a nap / Chase a ball / Beg for food**: play a routine now.
-- **Ask to play**: put the invite up now.
-- **Pause**: stop until you resume.
-- The top line says what the cat is doing, or how long until the next visit.
-- **Show in screenshots & recordings**: ticked, the cat appears in captures.
-  Unticked (the default) it stays out of them. Takes effect immediately and is
-  written back to your settings, so it survives a restart.
+The icon is the pet itself: a little silhouette of the cat or dog. A ☕ next
+to it means **Stepped out** is on; 💭, ✅ and ⚠️ show an answer on its way when
+the answer box is hidden. The menu, top to bottom:
+
+- The top line says what the pet is doing, or how long until the next visit.
+- **Pause** / **Resume**.
+- **Pet: Cat / Dog**: switch pets, saved, at once.
+- **Mode: Normal / Crawler**: the saved mode (see Modes).
+- **Play now**: walk, nap, ball, beg, ask to play, break some apps, crawl until
+  I touch something, and Zero Day (3 min hack).
+- **LLM mode: On / Off** (see LLM mode):
+  - **Answer what I copy or screenshot**: the mode itself.
+  - **Ask about what I copied now**: once, with or without the mode.
+  - **Show answer box** and **Copy answers to clipboard**.
+  - **Set API key…**: paste an Anthropic API key, kept in the keychain. With a
+    key, answers come from the Claude API directly; without one, from your
+    Claude Code login. The last line says which one is in use.
+- **Stepped out (Mac never sleeps)**: ticked, the Mac does not sleep and the
+  screen does not go off, like `caffeinate -di`. Saved, so it survives a
+  restart. Quitting lets the Mac sleep again. Closing the lid on battery still
+  sleeps it.
+- **Show in screenshots & recordings**: ticked, the pet and its answer card
+  appear in captures. Unticked (the default) they stay out of them.
 - **Open at login**: writes or removes the same LaunchAgent as
   `install-login-item.sh`. Takes effect at the next login.
-- **Edit settings…** / **Reload settings**.
-- **Quit Screen Cat**.
+- **Open playground**.
+- **Activity log**: today's log, or the folder with all of them.
+- **Settings**: edit the settings file, or reload it.
+- **Quit Screen Cat** (⌘Q).
+
+On the very first launch a short welcome says where the app lives, with a
+button to also open it at login.
+
+## Pets
+
+`pet` is `cat` (the default) or `dog`. The cat follows the colour settings; the
+dog keeps its own tan coat and only its eyes are recoloured. Both wear the same
+shades and gold chain. The dog is original art drawn by `mac/Tools/make_dog.swift`.
+
+## App icon and releases
+
+`--app-icon <dir.iconset>` draws the app icon with the app's own renderer;
+`iconutil -c icns <dir.iconset> -o Assets/AppIcon.icns` turns it into the file
+the build bundles. `./release.sh` builds and zips the app into
+`dist/ScreenCat-mac-<version>.zip` (set `VERSION=` to change it) and prints its
+SHA-256 for the release notes.
 
 ## Settings
 
@@ -277,6 +365,7 @@ it, and those are never requested.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `pet` | `cat` | `cat` or `dog`. Also on the menu as **Pet**. |
 | `sizeDivisor` | `24` | Cat height = screen height / this. **Raise it to shrink the cat, lower it to grow.** The sprites are 32px art, so a small cat is a crisp one. |
 | `firstAppearanceDelay` | `20` | Seconds after launch before the first appearance. |
 | `opacity` | `1.0` | Overall transparency. Below `1` makes a small cat noticeably harder to spot. |
@@ -310,11 +399,22 @@ it, and those are never requested.
 | `mode` | `normal` | `normal` or `crawler`. Also set from the menu and the playground. |
 | `crawlChance` | `0.7` | In crawler mode, the chance a visit is a crawl. |
 | `idleCrawl` | `true` | Start the nonstop crawl when you leave the Mac alone. |
-| `idleCrawlSeconds` | `120` | How long with no input before it starts. At least `15`. |
+| `idleCrawlSeconds` | `1800` | How long with no input before it starts (30 minutes). At least `15`. Keep it below the display sleep time, or the screen goes off first (not a problem while **Stepped out** is on). |
 | `growScale` | `2` | How big the cat grows when the idle crawl starts, `1` to `4`. |
 | `glitchStyleSeconds` | `60` | How long each full-screen glitch style plays at speed 1. At least `5`. |
 | `glitchSpeed` | `2` | How fast the idle crawl's glitches animate and change. |
 | `zeroDaySpeed` | `8` | The same for Zero Day. |
+| `zeroDaySound` | `true` | Play Zero Day's background sound. |
+| `zeroDayVolume` | `0.25` | How loud it is, `0` to `1`. |
+| `steppedOut` | `false` | Keep the Mac awake and the screen on. Also on the menu as **Stepped out**. |
+| `llmMode` | `false` | Answer what you copy and screenshot. Also on the menu as **LLM mode**. |
+| `llmFromClipboard` / `llmFromScreenshots` | `true` / `true` | Which of the two LLM mode listens to. |
+| `llmCopyAnswer` | `true` | Put each answer on the clipboard as it arrives. Also on the menu as **Copy answers to clipboard**. |
+| `llmShowAnswer` | `true` | Show the cat and the answer card. `false` sends answers only to the clipboard, with a badge on the menu bar icon. Also on the menu as **Show answer box**. |
+| `llmModel` | `claude-opus-5-5` | The Claude model that answers. |
+| `llmEffort` | `medium` | How hard it thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `llmAnswerSeconds` | `120` | Close the answer this long after it arrives, unless the pointer is on it. `0` keeps it until you close it. |
+| `llmClaudePath` | `""` | Full path to `claude`, if it is not in one of the usual places. |
 | `activityLog` | `true` | Keep the daily activity log in `~/Library/Logs/ScreenCat`. |
 | `activityLogDays` | `30` | Delete day files older than this. `0` keeps them forever. |
 | `opacity` | `1.0` | Overall transparency, `0.1` to `1.0`. |
