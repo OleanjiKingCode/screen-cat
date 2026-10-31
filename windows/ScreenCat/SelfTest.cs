@@ -139,7 +139,7 @@ public static class SelfTest
         var walker = new CatState { Size = 96, Clip = Clip.SideWalk, IsDog = true };
         var cat = new CatState { Size = 96, Clip = Clip.SideWalk };
         Check(walker.CycleDistance < cat.CycleDistance, "the dog takes shorter steps than the cat");
-        foreach (int size in new[] { 16, 20, 32 })
+        foreach (int size in new[] { 16, 20, 32, 48 })
         {
             using var icon = dog.TrayImage(size);
             Check(icon != null && FitsInside(icon), $"the {size} px tray icon shows the whole dog");

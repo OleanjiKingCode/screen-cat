@@ -274,15 +274,18 @@ public sealed class SpriteSheet : IDisposable
         }
         if (maxX < 0) return null;
         int w = maxX - minX + 1, h = maxY - minY + 1;
-        // Whole-pixel steps when the icon is bigger than the pet. A 16 px icon
-        // is smaller than the pet itself, so there it is shrunk smoothly to fit.
-        bool shrink = Math.Max(w, h) > size;
-        double scale = shrink ? (double)size / Math.Max(w, h) : size / Math.Max(w, h);
+        // Whole-pixel steps keep it crisp when they fill most of the icon.
+        // Otherwise it is fitted to the icon: shrunk smoothly where the icon
+        // is smaller than the pet (16 px), stretched by nearest pixel where a
+        // whole step would leave it small (40 or 48 px at high scale).
+        int tall = Math.Max(w, h);
+        int whole = size / tall;
+        double scale = whole == 0 || whole * tall < size * 0.8 ? (double)size / tall : whole;
         int dw = Math.Max(1, (int)Math.Round(w * scale)), dh = Math.Max(1, (int)Math.Round(h * scale));
         var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using var g = Graphics.FromImage(bmp);
-        g.InterpolationMode = shrink ? System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic
-                                     : System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+        g.InterpolationMode = scale < 1 ? System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic
+                                        : System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
         g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
         // Centred across, standing on the bottom edge.
         var to = new Rectangle((size - dw) / 2, size - dh, dw, dh);

@@ -604,12 +604,18 @@ public sealed class QuestionWatch : IDisposable
         OnQuestion?.Invoke(question);
     }
 
+    /// Only the picture that was asked about starts a pair window. The
+    /// skipped half closes it, so the next screenshot is asked about again.
     private bool TakeImageSlot(bool fromFolder)
     {
-        bool pair = fromFolder != lastImageFromFolder && (DateTime.UtcNow - lastImageAt).TotalSeconds < 5;
+        if (fromFolder != lastImageFromFolder && (DateTime.UtcNow - lastImageAt).TotalSeconds < 5)
+        {
+            lastImageAt = DateTime.MinValue;
+            return false;
+        }
         lastImageAt = DateTime.UtcNow;
         lastImageFromFolder = fromFolder;
-        return !pair;
+        return true;
     }
 
     // Screenshots -------------------------------------------------------------
