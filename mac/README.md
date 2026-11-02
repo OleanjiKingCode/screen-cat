@@ -157,10 +157,18 @@ or sum gets solved with the steps, a claim gets checked, a word gets explained,
 code or an error gets explained or fixed. The answer is plain text you can
 select. Each answer also goes on the clipboard as it arrives, ready to paste
 (**Copy answers to clipboard** in the menu, `llmCopyAnswer`, on by default);
-**COPY** on the card copies it again. Close the card with the ✕ or Esc,
-and the cat walks off. Otherwise it closes `llmAnswerSeconds` (120) after the
-answer arrives, but never while the pointer is on it. You can drag the card.
+**COPY** on the card copies it again. The card stays up until you close it
+with the ✕ or Esc, even through the screen going off, and then the cat walks
+off. You can drag the card.
 A new question while the cat is sitting reuses the same card.
+
+**Follow-ups.** Under each answer is an "Ask a follow-up…" field. Click it,
+type a question about the answer or a request ("shorter", "explain step 2",
+"in French") and press Enter or **ASK**. Claude gets the conversation so far,
+the first copy or screenshot included, and the new answer replaces the old one
+on the card. Keep going as long as you like. A new copy or screenshot starts a
+fresh conversation, and closing the card forgets it. The card only takes the
+keyboard when you click into the field, and your app stays in front.
 
 **Show answer box** (`llmShowAnswer`, on by default) controls the cat and the
 card. Untick it and neither appears: each answer goes straight to the
@@ -413,7 +421,6 @@ SHA-256 for the release notes.
 | `llmShowAnswer` | `true` | Show the cat and the answer card. `false` sends answers only to the clipboard, with a badge on the menu bar icon. Also on the menu as **Show answer box**. |
 | `llmModel` | `claude-opus-5-5` | The Claude model that answers. |
 | `llmEffort` | `medium` | How hard it thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
-| `llmAnswerSeconds` | `120` | Close the answer this long after it arrives, unless the pointer is on it. `0` keeps it until you close it. |
 | `llmClaudePath` | `""` | Full path to `claude`, if it is not in one of the usual places. |
 | `activityLog` | `true` | Keep the daily activity log in `~/Library/Logs/ScreenCat`. |
 | `activityLogDays` | `30` | Delete day files older than this. `0` keeps them forever. |

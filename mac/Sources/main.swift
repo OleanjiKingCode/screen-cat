@@ -61,6 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var answerPanel: AnswerPanel?
     /// The newest answer, so copying part of it is not asked about again.
     private var lastAnswer = ""
+    /// What has been asked and answered on the card that is up, so a
+    /// follow-up typed on it is answered in context.
+    private var conversation: [Turn] = []
     /// After the cat in the menu bar: 💭 while an answer with no card is on
     /// its way, then ✅ or ⚠️ for a few seconds.
     private var badge = ""
@@ -276,7 +279,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !away else { return }
         if behavior is IdleCrawlBehavior { endIdleCrawl(reason: "screen went off") }
         away = true
-        stopBehavior()
+        // An answer stays up until you close it, so it is still there when
+        // the screen comes back. Anything else goes home.
+        if !(behavior is AskBehavior) { stopBehavior() }
         scheduleTimer?.invalidate()
         scheduleTimer = nil
         nextVisitAt = nil
@@ -285,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func comeBack() {
         guard away else { return }
         away = false
-        if !paused { schedule(after: scene.config.firstAppearanceDelay) }
+        if !paused && behavior == nil { schedule(after: scene.config.firstAppearanceDelay) }
     }
 
     // MARK: - Menu bar
@@ -721,9 +726,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// The cat walks on and sits, the card goes up above where it will sit,
     /// and the answer fills the card when Claude replies. A new question while
-    /// the cat is already sitting reuses the same cat and card.
+    /// the cat is already sitting reuses the same cat and card, and starts a
+    /// new conversation; a follow-up typed on the card carries it on.
     private func ask(_ question: Question, fromMenu: Bool = false) {
         guard !away, fromMenu || !paused else { return }
+        if !question.isFollowUp { conversation = [] }
+        let history = conversation
         scene.config = Config.load()
         guard scene.config.llmShowAnswer else { askQuietly(question); return }
         // A quiet question still on its way is replaced by this one.
@@ -738,19 +746,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ActivityLog.shared.cat("llm: asked about \(question.summary)")
         let asked = Date()
         let c = scene.config
-        asker.ask(question, config: c) { [weak self] answer in
+        asker.ask(question, after: history, config: c) { [weak self] answer in
             guard let self else { return }
             let took = String(format: "%.1fs", Date().timeIntervalSince(asked))
             switch answer {
             case .text(let text):
                 ActivityLog.shared.cat("llm: answered in \(took)")
                 self.lastAnswer = text
-                panel.showAnswer(text, closeAfter: c.llmAnswerSeconds)
+                self.conversation = history + [Turn(question: question, answer: text)]
+                panel.showAnswer(text)
                 // Through the card's own copy, so the watcher knows it is ours.
                 if c.llmCopyAnswer { panel.copyAnswer() }
             case .failed(let why):
                 ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
-                panel.showError(why, closeAfter: c.llmAnswerSeconds)
+                panel.showError(why)
             }
         }
     }
@@ -805,6 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Sends the sitting cat off and drops any answer still coming.
     private func closeAnswer() {
         asker.cancel()
+        conversation = []
         (behavior as? AskBehavior)?.release()
     }
 
@@ -814,6 +824,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.level = window.level
         panel.onClose = { [weak self] in self?.closeAnswer() }
         panel.onCopy = { [weak self] in self?.questions.ownChange = NSPasteboard.general.changeCount }
+        // Asked on purpose, so it goes even while paused, like the menu's ask.
+        panel.onFollowUp = { [weak self] text in self?.ask(.followUp(text), fromMenu: true) }
         answerPanel = panel
         return panel
     }
@@ -1052,6 +1064,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The card goes with the cat, whatever sent the cat away. An answer
         // with no card is not the cat's, so a new routine leaves it running.
         if wasAsking { asker.cancel() }
+        conversation = []
         answerPanel?.dismiss()
         shownRecipe = -1
         zeroDaySound.stop()

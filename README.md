@@ -68,6 +68,7 @@ Open the menu and go to **LLM mode > Turn LLM mode on**. From then on (until you
 
 - **Copy** any text (a question, an equation, a claim, a word, an error message) and the pet walks on with a card: THINKING, then the answer.
 - **Take a screenshot** (Cmd+Shift+4) and it answers what is in it. Add Control (Cmd+Ctrl+Shift+4) to copy the screenshot instead, which it picks up instantly.
+- **Ask a follow-up** in the field under the answer: a question about it, or a request like "shorter", "explain step 2" or "in French". Press Enter and the answer comes back on the same card, with the conversation so far. A new copy or screenshot starts a fresh conversation.
 - **Ask about what I copied now** asks once, with or without the mode on.
 - **Show answer box** off: no pet, no card, the answer just lands on your clipboard. The menu bar icon shows 💭 while it thinks and ✅ when the answer is ready to paste.
 

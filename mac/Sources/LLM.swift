@@ -5,14 +5,29 @@ enum Question {
     case text(String)
     /// PNG data, already shrunk for upload, and where it came from.
     case image(Data, from: String)
+    /// Typed on the card, about the answer already there.
+    case followUp(String)
 
     /// For the activity log and the card. Never the full content.
     var summary: String {
         switch self {
         case .text(let s): return "copied text (\(s.count) characters)"
         case .image(_, let from): return from
+        case .followUp(let s): return "a follow-up (\(s.count) characters)"
         }
     }
+
+    var isFollowUp: Bool {
+        if case .followUp = self { return true }
+        return false
+    }
+}
+
+/// One question on the card and Claude's answer to it. A follow-up is sent
+/// with the ones before it, so Claude knows what "it" and "that" are.
+struct Turn {
+    let question: Question
+    let answer: String
 }
 
 enum Answer {
@@ -45,6 +60,8 @@ final class Asker {
     - Code or an error message: say what is wrong and how to fix it, or what the code does.
     - A quiz or multiple-choice question: give the correct option and one line on why.
     - Anything else: the most useful short explanation or summary.
+    They can then type a follow-up on the card: a question about your answer, or a request such \
+    as shorter, simpler, more detail or another language. Answer it in light of what came before.
     Put the answer in the first line. Keep the whole reply short, a few lines, unless the \
     working is needed. Write plain text only: no Markdown, no headings, no bold. Write maths \
     in plain text, for example x^2 + 3x = 10, sqrt(2), pi.
@@ -70,8 +87,10 @@ final class Asker {
         task = nil
     }
 
-    /// Calls `done` once, on the main queue, unless cancelled first.
-    func ask(_ question: Question, config: Config, done: @escaping (Answer) -> Void) {
+    /// Calls `done` once, on the main queue, unless cancelled first. `history`
+    /// is the conversation so far on the card, oldest first.
+    func ask(_ question: Question, after history: [Turn] = [], config: Config,
+             done: @escaping (Answer) -> Void) {
         cancel()
         let mine = generation
         let finish: (Answer) -> Void = { [weak self] answer in
@@ -85,14 +104,14 @@ final class Asker {
             }
         }
         if let key = APIKey.load() {
-            askAPI(question, key: key, config: config, finish: finish)
+            askAPI(question, after: history, key: key, config: config, finish: finish)
             return
         }
         guard let exe = Self.claudePath(config.llmClaudePath) else {
             finish(.failed("Could not find the claude command. Install Claude Code, or set llmClaudePath in settings."))
             return
         }
-        guard let line = Self.inputLine(question) else {
+        guard let line = Self.inputLine(question, after: history) else {
             finish(.failed("Could not read what you copied."))
             return
         }
@@ -160,13 +179,14 @@ final class Asker {
 
     /// Straight to the Claude API with your key. Two or three seconds faster
     /// than the command line tool, and works on a Mac without Claude Code.
-    private func askAPI(_ question: Question, key: String, config: Config, finish: @escaping (Answer) -> Void) {
+    private func askAPI(_ question: Question, after history: [Turn], key: String, config: Config,
+                        finish: @escaping (Answer) -> Void) {
         var body: [String: Any] = [
             "model": config.llmModel,
             "max_tokens": 16000,
             "system": Self.systemPrompt,
             "output_config": ["effort": config.llmEffort],
-            "messages": [["role": "user", "content": Self.content(question)]],
+            "messages": Self.messages(question, after: history),
         ]
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         request.httpMethod = "POST"
@@ -217,11 +237,25 @@ final class Asker {
         return text.isEmpty ? .failed("Claude sent back an empty answer.") : .text(text)
     }
 
-    /// The user message: the copied text, or the screenshot.
+    /// The conversation as API messages: each earlier question and its
+    /// answer, then the new one.
+    private static func messages(_ question: Question, after history: [Turn]) -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        for turn in history {
+            out.append(["role": "user", "content": content(turn.question)])
+            out.append(["role": "assistant", "content": [["type": "text", "text": turn.answer]]])
+        }
+        out.append(["role": "user", "content": content(question)])
+        return out
+    }
+
+    /// The user message: the copied text, the screenshot, or a follow-up.
     private static func content(_ question: Question) -> [[String: Any]] {
         switch question {
         case .text(let s):
             return [["type": "text", "text": "I copied this:\n<copied>\n\(s)\n</copied>"]]
+        case .followUp(let s):
+            return [["type": "text", "text": s]]
         case .image(let png, _):
             return [
                 ["type": "image", "source": ["type": "base64", "media_type": "image/png",
@@ -231,9 +265,17 @@ final class Asker {
         }
     }
 
-    /// One stream-json user message for the command line tool.
-    private static func inputLine(_ question: Question) -> Data? {
-        let message: [String: Any] = ["type": "user", "message": ["role": "user", "content": content(question)]]
+    /// One stream-json user message for the command line tool. It takes only
+    /// user messages, so for a follow-up the earlier answers are written into
+    /// that one message, each after the question it answered.
+    private static func inputLine(_ question: Question, after history: [Turn]) -> Data? {
+        var blocks: [[String: Any]] = []
+        for turn in history {
+            blocks += content(turn.question)
+            blocks.append(["type": "text", "text": "You answered:\n<answer>\n\(turn.answer)\n</answer>"])
+        }
+        blocks += content(question)
+        let message: [String: Any] = ["type": "user", "message": ["role": "user", "content": blocks]]
         guard var data = try? JSONSerialization.data(withJSONObject: message) else { return nil }
         data.append(0x0A)
         return data
