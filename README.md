@@ -55,7 +55,7 @@ And a few quieter things:
 
 1. Download `ScreenCat-mac-<version>.zip` from [Releases](../../releases) and unzip it.
 2. Drag **ScreenCat** into your **Applications** folder.
-3. Open it the first time with **right-click > Open**, then **Open** again. The app is not notarized by Apple yet, so a plain double-click is blocked once. (Or open it, then go to **System Settings > Privacy & Security** and click **Open Anyway**.)
+3. Open it once. The app is not notarized by Apple yet, so macOS blocks the first launch: go to **System Settings > Privacy & Security** and click **Open Anyway**. On macOS 14 and earlier, **right-click > Open**, then **Open**, also works.
 4. Look at the **top right of your menu bar** for a little cat silhouette. Everything lives in that menu.
 
 To start it every time you log in, tick **Open at login** in the menu.
