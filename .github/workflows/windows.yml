@@ -1,0 +1,90 @@
+name: windows
+
+on:
+  push:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+  # A published release gets the Windows zip attached, next to the Mac one.
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows/ScreenCat
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Publish single exe
+        run: dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+
+      # The self-test runs every routine and renders every glitch style with
+      # nobody at the screen, and writes pictures of them.
+      - name: Self-test
+        run: |
+          $p = Start-Process -FilePath publish\ScreenCat.exe -ArgumentList '--selftest', 'selftest' -Wait -PassThru
+          if (Test-Path selftest\report.txt) { Get-Content selftest\report.txt } else { Write-Host "no report written" }
+          exit $p.ExitCode
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenCat-win-x64
+          path: |
+            windows/ScreenCat/publish/ScreenCat.exe
+            windows/ScreenCat/publish/Assets/CREDIT.txt
+
+      - name: Upload self-test pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenCat-selftest
+          path: windows/ScreenCat/selftest
+          if-no-files-found: ignore
+
+  # Only this job can write to the repository, and only for a published release.
+  release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ScreenCat-win-x64
+          path: out
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $zip = "ScreenCat-windows-$version.zip"
+          $files = Get-ChildItem out -Recurse -File | Where-Object { $_.Name -in 'ScreenCat.exe', 'CREDIT.txt' }
+          Compress-Archive -Path $files.FullName -DestinationPath $zip
+          gh release upload $env:TAG $zip --clobber --repo $env:GITHUB_REPOSITORY
+          (Get-FileHash $zip -Algorithm SHA256).Hash
