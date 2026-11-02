@@ -25,9 +25,9 @@ the lock, so they work while the cat is out.
 
 Sprites are the free tier of **[Cat Pack by Glem / octopusINKUS](https://octopusinkus.itch.io/cat-pack)**.
 The files in `Assets/` are the author's originals, unmodified on disk; Screen Cat
-recolours them in memory at launch. The pack states no licence and is a
-name-your-own-price download, so it is used here in a personal, non-redistributed
-toy. If you keep it, pay the author. See `Assets/CREDIT.txt`.
+recolours them in memory at launch. They are used with the artist's permission.
+If you want the cat art for something else, get it from the artist's page. See
+`Assets/CREDIT.txt`.
 
 `Cat_Ball.png` is the yarn ball cropped out of the pack's play animation so it can
 roll around on its own.
