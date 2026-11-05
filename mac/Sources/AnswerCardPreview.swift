@@ -29,8 +29,10 @@ func renderAnswerCards(to path: String) {
     let question = "A train leaves at 3:40 pm and the trip takes 2 h 35 min. What time does it arrive?"
     panel.showThinking(.text(question), above: CGPoint(x: 1000, y: 120), within: screen)
     snap("Thinking")
-    panel.showAnswer("It arrives at 6:15 pm.\n3:40 pm + 2 h = 5:40 pm.\n5:40 pm + 35 min = 6:15 pm.",
-                     autoCopy: true)
+    // Never autoCopy here: that writes your real clipboard. The note alone
+    // shows what an auto-copied answer looks like.
+    panel.showAnswer("It arrives at 6:15 pm.\n3:40 pm + 2 h = 5:40 pm.\n5:40 pm + 35 min = 6:15 pm.")
+    panel.showCopiedNote()
     snap("Answer, copied to the clipboard")
     panel.showThinking(.followUp("Now say it in French"), above: CGPoint(x: 1000, y: 120), within: screen)
     snap("Follow-up on its way")
@@ -52,7 +54,8 @@ func renderAnswerCards(to path: String) {
         Yes, botanically a tomato is a fruit, because it grows from the flower and holds the seeds. \
         Cooks treat it as a vegetable since it is savoury, and in 1893 the US Supreme Court ruled it a \
         vegetable for import tax.
-        """, autoCopy: true)
+        """)
+    panel.showCopiedNote()
     snap("One-paragraph answer")
 
     // A 3,000-character copy and a long answer on a short screen: the asked

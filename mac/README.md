@@ -153,8 +153,8 @@ Tick **LLM mode (answers what you copy or screenshot)** in the menu. From then
 on, text you copy twice in a row (Cmd+C Cmd+C, within a second), any picture
 you copy, and every screenshot you take go to Claude. One copy of text is just
 a copy, so everyday copying never asks. The cat walks on, sits, and holds up a card: what you
-asked, pulsing dots while it thinks, then the answer, with its first line as a
-headline. It works out what you want: a question gets answered, an equation
+asked, pulsing dots while it thinks, then the answer, with its first line (or
+the first sentence of a long one) as a headline. It works out what you want: a question gets answered, an equation
 or sum gets solved with the steps, a claim gets checked, a word gets explained,
 code or an error gets explained or fixed. The answer is plain text you can
 select. Each answer also goes on the clipboard as it arrives, ready to paste

@@ -322,6 +322,10 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         copiedNote.isHidden = !(autoCopy && putOnClipboard())
     }
 
+    /// Only the "Copied to clipboard" note, with no copy made, for the
+    /// offscreen render.
+    func showCopiedNote() { copiedNote.isHidden = false }
+
     func showError(_ text: String) {
         stopThinking()
         answer = ""

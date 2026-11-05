@@ -543,9 +543,10 @@ final class QuestionWatch {
         }
     }
 
-    /// What kind of question the clipboard holds, without reading a picture
-    /// into memory. Nil for what can never be a question: private, a file, or
-    /// nothing usable.
+    /// What kind of question the clipboard holds. Text is read as text. A
+    /// picture's bytes are read once per change, only to size it for the
+    /// fingerprint; copied pictures are rare, so that is cheap enough. Nil for
+    /// what can never be a question: private, a file, or nothing usable.
     static func clipboardContent() -> CopyTwiceDetector.Content? {
         let pb = NSPasteboard.general
         let types = Set((pb.types ?? []).map(\.rawValue))

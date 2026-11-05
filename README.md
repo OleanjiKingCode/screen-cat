@@ -66,7 +66,7 @@ Needs macOS 12 or later, Apple silicon or Intel.
 
 Open the menu and go to **LLM mode > Answer what I copy or screenshot**. From then on:
 
-- **Copy any text twice in a row** (Cmd+C Cmd+C, within a second): a question, an equation, a claim, a word, an error message. The pet walks on with a card: what you asked, dots while it thinks, then the answer, its first line in bold. One copy is just a copy, so everyday copying never asks. A copied picture still asks at once. To answer every copy of text instead, untick **LLM mode > Only when I copy twice (⌘C ⌘C)**.
+- **Copy any text twice in a row** (Cmd+C Cmd+C, within a second): a question, an equation, a claim, a word, an error message. The pet walks on with a card: what you asked, dots while it thinks, then the answer, its first line (or the first sentence of a long one) in bold. One copy is just a copy, so everyday copying never asks. A copied picture still asks at once. To answer every copy of text instead, untick **LLM mode > Only when I copy twice (⌘C ⌘C)**.
 - **Take a screenshot** (Cmd+Shift+4) and it answers what is in it. Add Control (Cmd+Ctrl+Shift+4) to copy the screenshot instead, which it picks up instantly.
 - **Ask a follow-up** in the field under the answer: a question about it, or a request like "shorter", "explain step 2" or "in French". Press Enter and the answer comes back on the same card, with the conversation so far. A new copy or screenshot starts a fresh conversation.
 - **Ask about what I copied now** asks once, with or without the mode on.
