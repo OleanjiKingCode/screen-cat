@@ -26,6 +26,8 @@ final class OverlayView: NSView {
     var breaches: [Breach] = []
     var zap: Zap?
     var aura: Aura?
+    /// What the trash rescue has in its mouth or in the air.
+    var carried: CarriedItem?
 
     override var isFlipped: Bool { false }
     override var isOpaque: Bool { false }
@@ -101,6 +103,7 @@ final class OverlayView: NSView {
         if scene.cat.visible {
             drawCat(scene.cat, sheet: sheet, drawShadow: drawShadows,
                     palette: extras, in: ctx)
+            if let carried { drawCarriedItem(carried, palette: extras, in: ctx) }
             if let petTime {
                 drawHearts(above: scene.cat, time: petTime, palette: extras, in: ctx)
             }

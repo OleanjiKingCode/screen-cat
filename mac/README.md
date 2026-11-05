@@ -43,6 +43,7 @@ One routine at random every few minutes, then it hides until the next one.
 | **Ball** | A ball rolls in from one edge. The cat runs in from the same spot chasing it, pounces, rolls around batting it for a few seconds, then boots it off screen and runs off after it. |
 | **Hungry** | Walks in, turns to face you, sits up with an empty food bowl beside it, blinks and stares, then wanders off. |
 | **Let's play** | Rare. Walks in, sits, and puts up a pixel speech bubble asking for a game. Say yes and it follows your pointer for a minute. Ignore it and it gives up after three. |
+| **Trash rescue** | Not random: it runs when you throw something from the Desktop in the Trash. See Trash rescue. |
 
 Only the ball chase runs. Every walk is a walk.
 
@@ -262,6 +263,38 @@ When your pointer is somewhere it cannot reach on one shallow diagonal (straight
 overhead, say), the cat **switchbacks**, zig-zagging up the way you would walk a
 slope too steep to take head on, rather than floating straight there.
 
+## Trash rescue
+
+Drag a file or folder from the Desktop to the Trash (or press ⌘⌫) and the
+pet comes in from the side nearest the Trash, runs to it and digs. Out pops a
+little pixel folder or page, which it carries on its back toward the middle of
+the screen, then tosses up to the top right of the Desktop. When it lands, the
+real item is moved back from the Trash to where it was. Several things thrown
+at once ride as a small stack and all come back.
+
+- **Once only.** Throw the same thing away again within ten minutes and the
+  pet lets it go: you meant it.
+- **Never in the way.** Nothing happens while the pet is paused, while the
+  screen is off, while a blocked app (a film) is in front, or while the pet
+  is busy with an answer card or the idle crawl. The item just stays in the
+  Trash.
+- **Name taken.** If something new has the old name by then, it comes back
+  as "name 2", the way Finder numbers copies.
+- **Only the Desktop.** Things thrown away from other folders, emptied
+  straight from the Trash, or deleted with `rm` are left alone.
+
+How it sees it: `~/.Trash` cannot be listed without Full Disk Access, but
+FSEvents still reports both ends of the move, the Desktop path that went away
+and the Trash path that appeared, with the same file ID. Putting it back is a
+plain move of that one path. macOS may ask once for access to the Desktop
+folder. Where the Trash is comes from the Dock's own settings (side, icon size
+and how many icons it shows), so the pet digs near the Trash, not always
+exactly under it.
+
+Untick **Rescue things I trash from the Desktop** in the menu, or set
+`trashRescue` to `false`, to turn it off. **Play now > Dig something out of
+the Trash** shows the routine with nothing real in its paws.
+
 ## Where it shows up
 
 The window sits at `windowLevel: "top"` and joins every Space, so the cat appears
@@ -319,8 +352,9 @@ the answer box is hidden. The menu, top to bottom:
 - **Pause** / **Resume**.
 - **Pet: Cat / Dog**: switch pets, saved, at once.
 - **Mode: Normal / Crawler**: the saved mode (see Modes).
-- **Play now**: walk, nap, ball, beg, ask to play, break some apps, crawl until
-  I touch something, and Zero Day (3 min hack).
+- **Play now**: walk, nap, ball, beg, ask to play, dig something out of the
+  Trash, break some apps, crawl until I touch something, and Zero Day (3 min
+  hack).
 - **LLM mode: On / Off** (see LLM mode):
   - **Answer what I copy or screenshot**: the mode itself.
   - **Ask about what I copied now**: once, with or without the mode.
@@ -332,6 +366,9 @@ the answer box is hidden. The menu, top to bottom:
   screen does not go off, like `caffeinate -di`. Saved, so it survives a
   restart. Quitting lets the Mac sleep again. Closing the lid on battery still
   sleeps it.
+- **Rescue things I trash from the Desktop**: ticked (the default), the pet
+  digs things thrown from the Desktop out of the Trash and puts them back,
+  once each (see Trash rescue).
 - **Show in screenshots & recordings**: ticked, the pet and its answer card
   appear in captures. Unticked (the default) they stay out of them.
 - **Open at login**: writes or removes the same LaunchAgent as
@@ -407,6 +444,7 @@ SHA-256 for the release notes.
 | `zeroDaySound` | `true` | Play Zero Day's background sound. |
 | `zeroDayVolume` | `0.25` | How loud it is, `0` to `1`. |
 | `steppedOut` | `false` | Keep the Mac awake and the screen on. Also on the menu as **Stepped out**. |
+| `trashRescue` | `true` | Dig things thrown from the Desktop out of the Trash and put them back. Also on the menu as **Rescue things I trash from the Desktop**. |
 | `llmMode` | `false` | Answer what you copy and screenshot. Also on the menu as **LLM mode**. |
 | `llmFromClipboard` / `llmFromScreenshots` | `true` / `true` | Which of the two LLM mode listens to. |
 | `llmCopyAnswer` | `true` | Put each answer on the clipboard as it arrives. Also on the menu as **Copy answers to clipboard**. |
@@ -450,6 +488,15 @@ Renders a contact sheet of every animation to a PNG. Useful after changing colou
 Plays one routine offscreen through the real window and view, prints the clip
 sequence and the area covered, and writes a trail of where the cat went. This is
 how the movement rules get checked without needing a screen recording.
+
+```bash
+./ScreenCat.app/Contents/MacOS/ScreenCat --rescue-selftest [desktop]
+```
+
+Checks the trash rescue end to end without the pet: throws a scratch file, a
+scratch folder and a name the Trash already holds away, checks each one is
+seen, puts them back, and deletes them again. Uses a scratch folder, or the
+real Desktop with `desktop`. Prints PASS or the first thing that failed.
 
 ```bash
 ./ScreenCat.app/Contents/MacOS/ScreenCat --watching

@@ -68,6 +68,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The pet's silhouette, shown in the menu bar.
     private var menuIcon: NSImage?
 
+    // Trash rescue: things thrown from the Desktop to the Trash get dug out.
+    private let trashWatch = TrashWatch()
+    /// When each Desktop path was last put back. Thrown away again soon
+    /// after, the cat lets it go: you meant it.
+    private var rescuedAt: [String: Date] = [:]
+
     /// `--selftest <png>`: run the real on-screen window, force a walk, then
     /// photograph our own window to prove what actually reached the screen.
     private func runSelfTest(to path: String) {
@@ -193,6 +199,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return answer.contains(text)
         }
         applyLLMMode()
+        trashWatch.onTrashed = { [weak self] items in self?.trashed(items) }
+        applyTrashRescue()
         if firstRun { showWelcome() }
         schedule(after: demo ? 2 : scene.config.firstAppearanceDelay)
     }
@@ -244,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         view.sheet = sheet
+        scene.sheet = sheet
         scene.cat.isDog = c.pet == "dog"
         loadedPaletteKey = key
         menuIcon = sheet.menuBarIcon()
@@ -255,6 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyConfig()
         applySteppedOut()
         applyLLMMode()
+        applyTrashRescue()
         loadSprites()
         view.needsDisplay = true
     }
@@ -330,6 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(now, "Chase a ball", #selector(runBall))
         add(now, "Beg for food", #selector(runHungry))
         add(now, "Ask to play", #selector(runPlay))
+        add(now, "Dig something out of the Trash", #selector(runRescue))
         now.addItem(.separator())
         add(now, "Break some apps", #selector(runCrawl))
         add(now, "Crawl until I touch something", #selector(runIdleCrawl))
@@ -348,6 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         add(menu, "Stepped out (Mac never sleeps)", #selector(toggleSteppedOut), tag: 600)
+        add(menu, "Rescue things I trash from the Desktop", #selector(toggleTrashRescue), tag: 900)
         add(menu, "Show in screenshots & recordings", #selector(toggleCapture), tag: 300)
         add(menu, "Open at login", #selector(toggleLogin), tag: 400)
         menu.addItem(.separator())
@@ -390,6 +402,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tick(300, !c.hideFromCapture)
         tick(400, LoginItem.isEnabled)
         tick(600, StayAwake.isOn)
+        tick(900, c.trashRescue)
         tick(701, c.llmCopyAnswer)
         tick(702, c.llmShowAnswer)
         tick(500, c.mode != "crawler")
@@ -428,6 +441,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func runHungry() { start(.hungry, force: true) }
     @objc private func runPlay()   { start(.play, force: true) }
     @objc private func runCrawl()  { start(.crawl, force: true) }
+    /// A show of the rescue with nothing real in the cat's mouth.
+    @objc private func runRescue() { startRescue([]) }
     @objc private func runIdleCrawl() { beginIdleCrawl(grace: 1.0) }
 
     // MARK: - Idle crawl
@@ -662,6 +677,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshStatusTitle()
         guard wasOn != StayAwake.isOn else { return }
         ActivityLog.shared.cat(StayAwake.isOn ? "stepped out: Mac stays awake" : "stepped out off: Mac may sleep")
+    }
+
+    // MARK: - Trash rescue
+
+    @objc private func toggleTrashRescue(_ sender: NSMenuItem) {
+        scene.config.trashRescue.toggle()
+        Config.update("trashRescue", to: scene.config.trashRescue)
+        applyTrashRescue()
+        sender.state = scene.config.trashRescue ? .on : .off
+    }
+
+    private func applyTrashRescue() {
+        guard scene.config.trashRescue else {
+            if trashWatch.isRunning { ActivityLog.shared.cat("trash rescue off") }
+            trashWatch.stop()
+            return
+        }
+        if !trashWatch.isRunning { ActivityLog.shared.cat("trash rescue on") }
+        trashWatch.start()
+    }
+
+    /// Something left the Desktop for the Trash. The cat goes after it unless
+    /// it is busy with something you asked for, keeping out of the way, or
+    /// already put this one back a moment ago.
+    private func trashed(_ items: [TrashedItem]) {
+        let now = Date()
+        rescuedAt = rescuedAt.filter { now.timeIntervalSince($0.value) < 600 }
+        let wanted = items.filter { rescuedAt[$0.original.path] == nil }
+        for item in items where rescuedAt[item.original.path] != nil {
+            ActivityLog.shared.cat("trash rescue: let \(item.name) go, it was thrown away twice")
+        }
+        guard !wanted.isEmpty else { return }
+        let names = wanted.map(\.name).joined(separator: ", ")
+        guard !paused, !away else {
+            ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (\(paused ? "paused" : "away"))")
+            return
+        }
+        if let rescue = behavior as? RescueBehavior, rescue.add(wanted) {
+            ActivityLog.shared.cat("trash rescue: also going after \(names)")
+            return
+        }
+        // Never over an answer card, the idle crawl or a rescue already
+        // on its way out.
+        if behavior is AskBehavior || behavior is IdleCrawlBehavior || behavior is RescueBehavior {
+            ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (cat busy)")
+            return
+        }
+        if let why = Watching.reason(scene.config, screen: DockTrash.screen()) {
+            ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (\(why))")
+            return
+        }
+        startRescue(wanted)
+    }
+
+    private func startRescue(_ items: [TrashedItem]) {
+        scene.rescueItems = items
+        start(.rescue, force: true, on: DockTrash.screen())
+        guard let rescue = behavior as? RescueBehavior else { return }
+        if !items.isEmpty {
+            ActivityLog.shared.cat("trash rescue: going after \(items.map(\.name).joined(separator: ", "))")
+        }
+        rescue.onRestore = { [weak self] items in self?.putBack(items) }
+    }
+
+    private func putBack(_ items: [TrashedItem]) {
+        for item in items {
+            rescuedAt[item.original.path] = Date()
+            if let back = TrashWatch.restore(item) {
+                // It may have come back under a new name; that one counts too.
+                rescuedAt[back.path] = Date()
+                ActivityLog.shared.cat("trash rescue: put \(item.name) back as \(back.lastPathComponent)")
+            } else {
+                ActivityLog.shared.cat("trash rescue: \(item.name) was no longer in the Trash")
+            }
+        }
     }
 
     // MARK: - LLM mode
@@ -952,7 +1042,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         start(.stroll)
     }
 
-    private func start(_ requested: Routine, force: Bool = false) {
+    private func start(_ requested: Routine, force: Bool = false, on chosen: NSScreen? = nil) {
         var routine = requested
         // One cat at a time: whatever is out now leaves before the next arrives.
         stopBehavior()
@@ -968,7 +1058,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyConfig()
         loadSprites()
 
-        let screen = targetScreen()
+        let screen = chosen ?? targetScreen()
         currentScreen = screen
         // visibleFrame, not frame: the overlay sits below the Dock and the menu
         // bar, so a cat that walked there would be half-hidden.
@@ -977,11 +1067,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Begging and the play invite both face you and need a clickable
         // bubble the right way up, so they stay on the bottom edge.
         let mayUseWall = routine != .hungry && routine != .play && routine != .crawl && routine != .ask
-            && routine != .idleCrawl && routine != .zeroDay
+            && routine != .idleCrawl && routine != .zeroDay && routine != .rescue
             && Double.random(in: 0..<1) < scene.config.wallChance
         let surface: Surface = mayUseWall ? (Bool.random() ? .left : .right) : .bottom
         scene.setStage(surface: surface, screen: screen.visibleFrame, catSize: scene.cat.size)
         if routine == .idleCrawl || routine == .zeroDay { scene.crawlTargets = crawlTargets(on: screen) }
+        // The rescue digs at the Trash, so it needs the Dock's spot on the floor.
+        if routine == .rescue { scene.trashX = DockTrash.x(on: screen) - screen.visibleFrame.minX }
         if routine == .crawl {
             scene.crawlTargets = crawlTargets(on: screen)
             // Nothing to break on this screen: just take a walk.
@@ -1048,6 +1140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view?.breaches = []
         view?.zap = nil
         view?.aura = nil
+        view?.carried = nil
         takeover?.clear()
         // The card goes with the cat, whatever sent the cat away. An answer
         // with no card is not the cat's, so a new routine leaves it running.
@@ -1126,10 +1219,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.breaches = crawl?.breaches ?? []
         view.zap = crawl?.zap
         view.aura = crawl?.aura
+        view.carried = (behavior as? RescueBehavior)?.carried
         var dirty = scene.cat.bounds
         for breach in view.breaches { dirty = dirty.union(breach.rect.insetBy(dx: -6, dy: -6)) }
         if let zap = view.zap { dirty = dirty.union(zap.bounds) }
         if let aura = view.aura { dirty = dirty.union(aura.bounds) }
+        if let carried = view.carried { dirty = dirty.union(carried.bounds) }
         if let idle = behavior as? IdleCrawlBehavior { showTakeover(idle) }
         if scene.ball.visible { dirty = dirty.union(scene.ball.bounds) }
         if let tip = view.bubbleTip {
@@ -1350,6 +1445,13 @@ if CommandLine.arguments.count >= 3, ["--ask", "--ask-image"].contains(CommandLi
     }
     while !finished { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
     exit(0)
+}
+
+// `--rescue-selftest [desktop]` throws a scratch file in the Trash, checks
+// the watcher sees it and that putting it back works, then deletes the file.
+// It uses a scratch folder unless `desktop` is given.
+if CommandLine.arguments.contains("--rescue-selftest") {
+    runRescueSelfTest(onDesktop: CommandLine.arguments.contains("desktop"))
 }
 
 // Only one Screen Cat may run at a time, or you get two cats.

@@ -183,6 +183,39 @@ final class SpriteSheet {
     }
 
     /// Frame `index` of `clip`, cropped out of the sheet and cached.
+    private var backTops: [Int: (x: Int, y: Int)] = [:]
+
+    /// The top of the back in one frame, in sheet pixels (x from the left, y
+    /// down from the top), as drawn facing right: the highest body pixel in
+    /// the stretch between the tail and the head. Things the pet carries
+    /// ride there, so they follow every step of the walk.
+    func backTop(_ clip: Clip, _ index: Int) -> (x: Int, y: Int)? {
+        let info = clip.info
+        let i = info.count > 0 ? ((index % info.count) + info.count) % info.count : 0
+        let key = info.row * 100 + info.start + i
+        if let cached = backTops[key] { return cached }
+        guard let img = frame(clip, index) else { return nil }
+        let s = SpriteSheet.frameSize
+        guard let ctx = CGContext(data: nil, width: s, height: s, bitsPerComponent: 8, bytesPerRow: s * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = ctx.data else { return nil }
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: s, height: s))
+        let px = data.bindMemory(to: UInt8.self, capacity: s * s * 4)
+        // Row 0 of the buffer is the top of the frame.
+        func top(_ x: Int) -> Int? { (0..<s).first { px[($0 * s + x) * 4 + 3] > 0 } }
+        let columns = (0..<s).filter { top($0) != nil }
+        guard let left = columns.first, let right = columns.last else { return nil }
+        // The tail is at the left end and the head at the right, so the back
+        // is the stretch just left of the middle.
+        let from = left + (right - left) * 3 / 10
+        let to = max(from, left + (right - left) * 11 / 20)
+        guard let y = (from...to).compactMap(top).min() else { return nil }
+        let found = (x: (from + to) / 2, y: y)
+        backTops[key] = found
+        return found
+    }
+
     func frame(_ clip: Clip, _ index: Int) -> CGImage? {
         guard let sheet else { return nil }
         let info = clip.info
