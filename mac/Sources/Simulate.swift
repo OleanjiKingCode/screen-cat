@@ -55,7 +55,7 @@ func runSimulation(routine: Routine, to path: String) {
     scene.crawlTargets = fakeWindows
     // A pretend folder and a Trash near the bottom right, like a bottom Dock.
     let fakeTrash = TrashedItem(original: URL(fileURLWithPath: "/tmp/Lisbon trip"),
-                                inTrash: URL(fileURLWithPath: "/tmp/.Trash/Lisbon trip"), isFolder: true)
+                                inTrash: URL(fileURLWithPath: "/tmp/.Trash/Lisbon trip"), isFolder: true, fileID: 0)
     scene.rescueItems = [fakeTrash]
     scene.trashX = stage.width * 0.78
     let behavior = makeBehavior(routine, scene: scene)

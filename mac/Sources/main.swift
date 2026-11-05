@@ -442,7 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func runPlay()   { start(.play, force: true) }
     @objc private func runCrawl()  { start(.crawl, force: true) }
     /// A show of the rescue with nothing real in the cat's mouth.
-    @objc private func runRescue() { startRescue([]) }
+    @objc private func runRescue() { startRescue([], fromMenu: true) }
     @objc private func runIdleCrawl() { beginIdleCrawl(grace: 1.0) }
 
     // MARK: - Idle crawl
@@ -681,6 +681,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Trash rescue
 
+    /// Ticked, the pet digs things thrown from the Desktop out of the Trash.
+    /// Saved to settings.
     @objc private func toggleTrashRescue(_ sender: NSMenuItem) {
         scene.config.trashRescue.toggle()
         Config.update("trashRescue", to: scene.config.trashRescue)
@@ -688,14 +690,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sender.state = scene.config.trashRescue ? .on : .off
     }
 
+    /// Watches the Desktop and the Trash only while the setting is on.
     private func applyTrashRescue() {
         guard scene.config.trashRescue else {
             if trashWatch.isRunning { ActivityLog.shared.cat("trash rescue off") }
             trashWatch.stop()
+            // Off means off: a rescue on its way does not put anything back.
+            if let rescue = behavior as? RescueBehavior, !rescue.restored {
+                stopBehavior()
+                if !paused && !away { scheduleNext() }
+            }
             return
         }
         if !trashWatch.isRunning { ActivityLog.shared.cat("trash rescue on") }
         trashWatch.start()
+    }
+
+    /// Keys for "put back a moment ago": the path it was at, the path it
+    /// came back to, and the item itself, so renaming it does not get it
+    /// rescued twice.
+    private func rescueKeys(_ item: TrashedItem) -> [String] {
+        [item.original.path, "#\(item.fileID)"]
     }
 
     /// Something left the Desktop for the Trash. The cat goes after it unless
@@ -704,10 +719,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func trashed(_ items: [TrashedItem]) {
         let now = Date()
         rescuedAt = rescuedAt.filter { now.timeIntervalSince($0.value) < 600 }
-        let wanted = items.filter { rescuedAt[$0.original.path] == nil }
-        for item in items where rescuedAt[item.original.path] != nil {
+        let thrownTwice = { (item: TrashedItem) in self.rescueKeys(item).contains { self.rescuedAt[$0] != nil } }
+        for item in items where thrownTwice(item) {
             ActivityLog.shared.cat("trash rescue: let \(item.name) go, it was thrown away twice")
         }
+        let wanted = items.filter { !thrownTwice($0) }
         guard !wanted.isEmpty else { return }
         let names = wanted.map(\.name).joined(separator: ", ")
         guard !paused, !away else {
@@ -718,9 +734,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ActivityLog.shared.cat("trash rescue: also going after \(names)")
             return
         }
-        // Never over an answer card, the idle crawl or a rescue already
-        // on its way out.
-        if behavior is AskBehavior || behavior is IdleCrawlBehavior || behavior is RescueBehavior {
+        // Never over an answer card, a game you said yes to, the idle crawl,
+        // or a rescue already on its way out.
+        if behavior is AskBehavior || behavior is PlayBehavior || behavior is IdleCrawlBehavior
+            || behavior is RescueBehavior {
             ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (cat busy)")
             return
         }
@@ -731,9 +748,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         startRescue(wanted)
     }
 
-    private func startRescue(_ items: [TrashedItem]) {
+    /// Only a menu pick is forced. A real rescue keeps the usual watch, so a
+    /// film coming to the front sends the cat home, and the item stays in
+    /// the Trash.
+    private func startRescue(_ items: [TrashedItem], fromMenu: Bool = false) {
         scene.rescueItems = items
-        start(.rescue, force: true, on: DockTrash.screen())
+        start(.rescue, force: fromMenu, on: DockTrash.screen())
         guard let rescue = behavior as? RescueBehavior else { return }
         if !items.isEmpty {
             ActivityLog.shared.cat("trash rescue: going after \(items.map(\.name).joined(separator: ", "))")
@@ -743,13 +763,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func putBack(_ items: [TrashedItem]) {
         for item in items {
-            rescuedAt[item.original.path] = Date()
+            let now = Date()
+            for key in rescueKeys(item) { rescuedAt[key] = now }
             if let back = TrashWatch.restore(item) {
                 // It may have come back under a new name; that one counts too.
-                rescuedAt[back.path] = Date()
+                rescuedAt[back.path] = now
                 ActivityLog.shared.cat("trash rescue: put \(item.name) back as \(back.lastPathComponent)")
             } else {
-                ActivityLog.shared.cat("trash rescue: \(item.name) was no longer in the Trash")
+                ActivityLog.shared.cat("trash rescue: \(item.name) was not put back (gone from the Trash, or something else is there now)")
             }
         }
     }

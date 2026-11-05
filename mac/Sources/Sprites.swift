@@ -182,7 +182,6 @@ final class SpriteSheet {
         return image
     }
 
-    /// Frame `index` of `clip`, cropped out of the sheet and cached.
     private var backTops: [Int: (x: Int, y: Int)] = [:]
 
     /// The top of the back in one frame, in sheet pixels (x from the left, y
@@ -216,6 +215,7 @@ final class SpriteSheet {
         return found
     }
 
+    /// Frame `index` of `clip`, cropped out of the sheet and cached.
     func frame(_ clip: Clip, _ index: Int) -> CGImage? {
         guard let sheet else { return nil }
         let info = clip.info

@@ -45,7 +45,7 @@ One routine at random every few minutes, then it hides until the next one.
 | **Let's play** | Rare. Walks in, sits, and puts up a pixel speech bubble asking for a game. Say yes and it follows your pointer for a minute. Ignore it and it gives up after three. |
 | **Trash rescue** | Not random: it runs when you throw something from the Desktop in the Trash. See Trash rescue. |
 
-Only the ball chase runs. Every walk is a walk.
+Only the ball chase and the trash rescue run. Every other walk is a walk.
 
 ## How the cat moves
 

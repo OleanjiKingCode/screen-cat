@@ -11,6 +11,9 @@ struct TrashedItem {
     /// the Trash, so this is not always the original name.
     let inTrash: URL
     let isFolder: Bool
+    /// The file system's ID for it. A move keeps it, so it says whether what
+    /// is at `inTrash` later is still this item.
+    let fileID: UInt64
 
     var name: String { original.lastPathComponent }
 }
@@ -27,14 +30,20 @@ final class TrashWatch {
     let folder: URL
     let trash: URL
     private var stream: FSEventStreamRef?
-    /// One end of a move seen, the other not yet, by file ID.
-    private var left: [UInt64: (url: URL, isFolder: Bool, at: Date)] = [:]
-    private var arrived: [UInt64: (url: URL, at: Date)] = [:]
+    /// One end of a move seen, the other not yet: what left the Desktop and
+    /// what landed in the Trash, by file ID, with the event's ID. The two
+    /// ends of one move come one straight after the other.
+    private var departed: [UInt64: (url: URL, isFolder: Bool, event: UInt64, at: Date)] = [:]
+    private var arrived: [UInt64: (url: URL, event: UInt64, at: Date)] = [:]
 
-    init(folder: URL = TrashWatch.desktop, trash: URL = TrashWatch.userTrash) {
+    init(folder: URL = TrashWatch.desktop) {
         self.folder = folder.resolvingSymlinksInPath()
-        self.trash = trash.resolvingSymlinksInPath()
+        trash = TrashWatch.userTrash.resolvingSymlinksInPath()
     }
+
+    // The stream holds an unretained pointer to this object, so it must be
+    // gone before the object is.
+    deinit { stop() }
 
     static var desktop: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
@@ -50,11 +59,12 @@ final class TrashWatch {
         guard stream == nil else { return }
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
                                            retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
+        let callback: FSEventStreamCallback = { _, info, count, paths, flags, ids in
             guard let info else { return }
             let watch = Unmanaged<TrashWatch>.fromOpaque(info).takeUnretainedValue()
             let entries = unsafeBitCast(paths, to: NSArray.self) as? [[String: Any]] ?? []
-            watch.handle(entries, flags: Array(UnsafeBufferPointer(start: flags, count: count)))
+            watch.handle(entries, flags: Array(UnsafeBufferPointer(start: flags, count: count)),
+                         ids: Array(UnsafeBufferPointer(start: ids, count: count)))
         }
         let flags = kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
             | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagUseExtendedData
@@ -75,15 +85,16 @@ final class TrashWatch {
         FSEventStreamInvalidate(s)
         FSEventStreamRelease(s)
         stream = nil
-        left = [:]
+        departed = [:]
         arrived = [:]
     }
 
-    private func handle(_ entries: [[String: Any]], flags: [FSEventStreamEventFlags]) {
+    private func handle(_ entries: [[String: Any]], flags: [FSEventStreamEventFlags],
+                        ids: [FSEventStreamEventId]) {
         let renamed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed)
         let isDir = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
         let fm = FileManager.default
-        for (entry, flag) in zip(entries, flags) where flag & renamed != 0 {
+        for ((entry, flag), event) in zip(zip(entries, flags), ids) where flag & renamed != 0 {
             guard let path = entry[kFSEventStreamEventExtendedDataPathKey] as? String,
                   let id = (entry[kFSEventStreamEventExtendedFileIDKey] as? NSNumber)?.uint64Value else { continue }
             let name = (path as NSString).lastPathComponent
@@ -98,39 +109,50 @@ final class TrashWatch {
             // it came from.
             let exists = fm.fileExists(atPath: path)
             if parent == folder.path, !exists {
-                left[id] = (url, flag & isDir != 0, Date())
+                departed[id] = (url, flag & isDir != 0, event, Date())
             } else if parent == trash.path, exists {
-                arrived[id] = (url, Date())
+                arrived[id] = (url, event, Date())
             }
         }
 
         var found: [TrashedItem] = []
-        for (id, gone) in left {
-            guard let landed = arrived[id] else { continue }
-            found.append(TrashedItem(original: gone.url, inTrash: landed.url, isFolder: gone.isFolder))
-            left[id] = nil
+        for (id, gone) in departed {
+            // Same item and the very next events: one move, Desktop to Trash.
+            // Moved to another folder first and thrown away from there is two
+            // moves, far apart in the event stream, and is not ours.
+            guard let landed = arrived[id],
+                  max(landed.event, gone.event) - min(landed.event, gone.event) <= 3 else { continue }
+            found.append(TrashedItem(original: gone.url, inTrash: landed.url, isFolder: gone.isFolder, fileID: id))
+            departed[id] = nil
             arrived[id] = nil
         }
         // Moved somewhere else, or emptied straight away: forget it.
         let stale = Date().addingTimeInterval(-5)
-        left = left.filter { $0.value.at > stale }
+        departed = departed.filter { $0.value.at > stale }
         arrived = arrived.filter { $0.value.at > stale }
         if !found.isEmpty { onTrashed?(found.sorted { $0.name < $1.name }) }
     }
 
     /// Moves an item back where it was. If something new has taken its name
     /// meanwhile, it comes back as "name 2", the way Finder numbers copies.
-    /// Nil when it is gone from the Trash or the move fails.
+    /// Nil when it is gone from the Trash, something else is at its Trash
+    /// path now, or the move fails.
     static func restore(_ item: TrashedItem) -> URL? {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: item.inTrash.path) else { return nil }
+        // Only the item that was seen going in. Put back and thrown again
+        // from elsewhere, another item can land on the same Trash path.
+        let id = (try? fm.attributesOfItem(atPath: item.inTrash.path)[.systemFileNumber] as? NSNumber)?.uint64Value
+        guard id == item.fileID else { return nil }
         let folder = item.original.deletingLastPathComponent()
         let ext = item.original.pathExtension
         let stem = item.original.deletingPathExtension().lastPathComponent
+        // A plain folder is numbered after its whole name. A file, or a
+        // bundle such as a .pages or .app, before its extension.
+        let numberWhole = ext.isEmpty || (item.isFolder && !NSWorkspace.shared.isFilePackage(atPath: item.inTrash.path))
         var target = item.original
         var n = 2
         while fm.fileExists(atPath: target.path) {
-            let name = ext.isEmpty || item.isFolder ? "\(item.name) \(n)" : "\(stem) \(n).\(ext)"
+            let name = numberWhole ? "\(item.name) \(n)" : "\(stem) \(n).\(ext)"
             target = folder.appendingPathComponent(name)
             n += 1
         }
@@ -161,14 +183,14 @@ enum DockTrash {
             s.visibleFrame.minY - s.frame.minY > 8 || s.visibleFrame.minX - s.frame.minX > 8
                 || s.frame.maxX - s.visibleFrame.maxX > 8
         }
-        return reserved ?? screens.first ?? NSScreen.main!
+        return reserved ?? screens.first ?? targetScreen()
     }
 
     static func x(on screen: NSScreen) -> CGFloat {
         let dock = UserDefaults(suiteName: "com.apple.dock")
         let orientation = dock?.string(forKey: "orientation") ?? "bottom"
-        let tile = CGFloat(dock?.double(forKey: "tilesize") ?? 0) > 0
-            ? CGFloat(dock?.double(forKey: "tilesize") ?? 48) : 48
+        let size = CGFloat(dock?.double(forKey: "tilesize") ?? 0)
+        let tile = size > 0 ? size : 48
         let frame = screen.frame
         let visible = screen.visibleFrame
         switch orientation {
@@ -222,7 +244,7 @@ final class RescueBehavior: Behavior {
     private var stage: Stage = .arriving
     private var walk: ScriptedBehavior
     private var timer: CGFloat = 0
-    private(set) var items: [TrashedItem]
+    private var items: [TrashedItem]
     private let trashX: CGFloat
     /// Called once, when the toss lands. The app moves the items back then.
     var onRestore: (([TrashedItem]) -> Void)?
@@ -316,9 +338,8 @@ final class RescueBehavior: Behavior {
                 let u = 1 - e
                 let p = CGPoint(x: u * u * tossFrom.x + 2 * u * e * control.x + e * e * tossTo.x,
                                 y: u * u * tossFrom.y + 2 * u * e * control.y + e * e * tossTo.y)
-                carried = CarriedItem(isFolder: items.first?.isFolder ?? true, count: items.count,
-                                      pos: p, pixel: pixel * (1 + 0.8 * e),
-                                      alpha: t < 0.7 ? 1 : max(0, (1 - t) / 0.3))
+                carried = carrying(at: p, pixel: pixel * (1 + 0.8 * e),
+                                   alpha: t < 0.7 ? 1 : max(0, (1 - t) / 0.3))
                 if t >= 1 {
                     carried = nil
                     if !restored {
@@ -359,10 +380,16 @@ final class RescueBehavior: Behavior {
         let mirrored = cat.clip.info.mirrors && cat.facing < 0
         let column = CGFloat(back.x) + 0.5 - half
         // Sunk one pixel into the fur, so it sits rather than hovers.
-        return CarriedItem(isFolder: items.first?.isFolder ?? true, count: items.count,
-                           pos: CGPoint(x: cat.pos.x + (mirrored ? -column : column) * ps,
-                                        y: cat.pos.y + (SpriteSheet.groundRow - CGFloat(back.y) - 1) * ps),
-                           pixel: ps, alpha: 1)
+        return carrying(at: CGPoint(x: cat.pos.x + (mirrored ? -column : column) * ps,
+                                    y: cat.pos.y + (SpriteSheet.groundRow - CGFloat(back.y) - 1) * ps),
+                        pixel: ps)
+    }
+
+    /// What is being rescued, drawn at one spot: a folder or a page, as a
+    /// stack when there is more than one.
+    private func carrying(at pos: CGPoint, pixel: CGFloat, alpha: CGFloat = 1) -> CarriedItem {
+        CarriedItem(isFolder: items.first?.isFolder ?? true, count: items.count,
+                    pos: pos, pixel: pixel, alpha: alpha)
     }
 }
 
@@ -561,6 +588,53 @@ func runRescueSelfTest(onDesktop: Bool) -> Never {
         fail("taken name came back as \(firstBack.lastPathComponent)")
     }
     print("  name taken, so the first came back as \(firstBack.lastPathComponent)")
+
+    print("something else at the Trash path:")
+    let swap = folder.appendingPathComponent("screencat-rescue-test-\(stamp)-swap.txt")
+    make(swap, folder: false)
+    let swapped = throwAway(swap)
+    let impostor = TrashedItem(original: swapped.original, inTrash: swapped.inTrash,
+                               isFolder: false, fileID: swapped.fileID &+ 1)
+    guard TrashWatch.restore(impostor) == nil else { fail("restored an item with another file ID") }
+    print("  refused an item with another file ID")
+    putBack(swapped, expect: swap)
+
+    print("several at once:")
+    let pair = [folder.appendingPathComponent("screencat-rescue-test-\(stamp)-a.txt"),
+                folder.appendingPathComponent("screencat-rescue-test-\(stamp)-b.txt")]
+    for url in pair { make(url, folder: false) }
+    seen = []
+    for url in pair {
+        var landed: NSURL?
+        do { try fm.trashItem(at: url, resultingItemURL: &landed) } catch { fail("could not trash: \(error)") }
+        if let landed = landed as URL? { leftovers.append((landed, url)) }
+    }
+    wait(3) { seen.count >= 2 }
+    guard seen.count == 2 else { fail("saw \(seen.count) of 2 things thrown at once") }
+    for item in seen {
+        guard let url = pair.first(where: { $0.resolvingSymlinksInPath().path == item.original.path }) else {
+            fail("unexpected item \(item.name)")
+        }
+        putBack(item, expect: url)
+    }
+
+    print("moved to another folder, then thrown away from there:")
+    let elsewhere = fm.temporaryDirectory.appendingPathComponent("ScreenCatRescueElsewhere-\(stamp)", isDirectory: true)
+    try? fm.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    let wanderer = folder.appendingPathComponent("screencat-rescue-test-\(stamp)-moved.txt")
+    make(wanderer, folder: false)
+    let moved = elsewhere.appendingPathComponent(wanderer.lastPathComponent)
+    do { try fm.moveItem(at: wanderer, to: moved) } catch { fail("could not move: \(error)") }
+    made.append(moved)
+    made.append(elsewhere)
+    wait(0.8) { false }
+    seen = []
+    var movedLanded: NSURL?
+    do { try fm.trashItem(at: moved, resultingItemURL: &movedLanded) } catch { fail("could not trash: \(error)") }
+    if let landed = movedLanded as URL? { leftovers.append((landed, moved)) }
+    wait(2) { !seen.isEmpty }
+    guard seen.isEmpty else { fail("a move to another folder was taken for a throw from the Desktop") }
+    print("  not reported")
 
     cleanUp()
     print("PASS")
