@@ -11,7 +11,9 @@ import AppKit
 final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     /// The card was closed by you, with ✕ or Esc. Not called by `dismiss()`.
     var onClose: (() -> Void)?
-    /// The answer was put on the clipboard, by the button or automatically.
+    /// The card wrote the clipboard: the answer, by the Copy button or
+    /// automatically, or a Cmd+C or Cmd+X of a selection or of the follow-up
+    /// text.
     var onCopy: (() -> Void)?
     /// Typed into the field under the answer and sent with Enter or the arrow.
     var onFollowUp: ((String) -> Void)?
@@ -168,6 +170,9 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         right.orientation = .horizontal
         right.spacing = 2
 
+        // A label, not selectable: a click on it would make the card key and
+        // swap in a plain field editor that drops the bold and the ellipsis.
+        asked.isSelectable = false
         asked.font = .systemFont(ofSize: 11.5)
         asked.textColor = muted
         asked.maximumNumberOfLines = Self.askedLines
@@ -336,6 +341,8 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         stopThinking()
         reply.stringValue = ""
         tintSend()
+        // A button clicked as the card goes never sees the pointer leave.
+        for button in [copyButton, closeButton, sendButton] { button.clearHover() }
         orderOut(nil)
     }
 
@@ -711,7 +718,14 @@ final class CardButton: NSButton {
                                   owner: self)
         addTrackingArea(area)
         tracking = area
+        // A swapped tracking area sends no exit for the old one, so read
+        // where the pointer is now.
+        if let window {
+            hovering = window.isVisible && bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        }
     }
+
+    func clearHover() { hovering = false }
 
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }

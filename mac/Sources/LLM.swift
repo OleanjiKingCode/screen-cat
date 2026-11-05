@@ -359,7 +359,8 @@ func pngForUpload(_ image: NSImage) -> Data? {
 /// Copy-twice mode's trigger. For text, the same text copied twice in a row,
 /// within `window` seconds, is a question; one copy is just a copy. A copied
 /// picture (such as a screenshot copied with Control) asks at once, as it
-/// always has. It is fed every poll of the clipboard's change count. All the
+/// always has; copying the same picture again within the window does not ask
+/// a second time. It is fed every poll of the clipboard's change count. All the
 /// changes one poll sees count as ONE copy, because some apps clear and then
 /// write the clipboard for a single Cmd+C, and those would otherwise ask on
 /// every copy.
@@ -367,12 +368,15 @@ struct CopyTwiceDetector {
     /// What a clipboard change holds, as far as LLM mode cares.
     enum Content: Equatable {
         case text(String)
-        case image
+        /// A picture, with a cheap fingerprint: its types and size.
+        case image(String)
     }
 
     let window: TimeInterval = 1.0
     private var lastCount: Int
     private var first: (text: String, at: TimeInterval)?
+    /// The picture that last asked, so Cmd+C Cmd+C on it asks only once.
+    private var lastImage: (key: String, at: TimeInterval)?
 
     init(changeCount: Int) { lastCount = changeCount }
 
@@ -382,12 +386,16 @@ struct CopyTwiceDetector {
     mutating func poll(changeCount: Int, at time: TimeInterval, content: () -> Content?) -> Bool {
         guard changeCount != lastCount else { return false }
         lastCount = changeCount
-        switch content() {
+        let now = content()
+        if case .image = now {} else { lastImage = nil }
+        switch now {
         case nil:
             first = nil
             return false
-        case .image:
+        case .image(let key):
             first = nil
+            if let asked = lastImage, asked.key == key, time - asked.at <= window { return false }
+            lastImage = (key, time)
             return true
         case .text(let text):
             if let pending = first, pending.text == text, time - pending.at <= window {
@@ -423,9 +431,13 @@ func runCopyTwiceSelfTest() -> Bool {
         ("double copy, then the same text once more later",
          [Copy(at: 0.12, bump: 1, content: a), Copy(at: 0.42, bump: 1, content: a),
           Copy(at: 2.02, bump: 1, content: a)], 1),
-        ("image only, copied once (a copied screenshot)", [Copy(at: 0.12, bump: 1, content: .image)], 1),
+        ("image only, copied once (a copied screenshot)", [Copy(at: 0.12, bump: 1, content: .image("p"))], 1),
         ("text copied once, then an image", [Copy(at: 0.12, bump: 1, content: a),
-                                            Copy(at: 0.42, bump: 1, content: .image)], 1),
+                                            Copy(at: 0.42, bump: 1, content: .image("p"))], 1),
+        ("image copied twice", [Copy(at: 0.12, bump: 1, content: .image("p")),
+                                Copy(at: 0.42, bump: 1, content: .image("p"))], 1),
+        ("two different images", [Copy(at: 0.12, bump: 1, content: .image("p")),
+                                  Copy(at: 0.42, bump: 1, content: .image("q"))], 2),
     ]
     var allPassed = true
     for (name, copies, expected) in cases {
@@ -546,7 +558,9 @@ final class QuestionWatch {
         let justALink = (text.hasPrefix("http://") || text.hasPrefix("https://"))
             && !text.contains(where: \.isWhitespace)
         if text.count >= 2, !(hasImage && justALink) { return .text(text) }
-        return hasImage ? .image : nil
+        guard hasImage else { return nil }
+        let size = (pb.data(forType: .png) ?? pb.data(forType: .tiff))?.count ?? 0
+        return .image(types.sorted().joined(separator: ",") + ":\(size):" + text)
     }
 
     private func checkClipboard() {
