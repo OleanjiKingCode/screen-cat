@@ -735,6 +735,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if (behavior as? AskBehavior)?.isLeaving ?? true { start(.ask, force: true) }
         guard let sitting = behavior as? AskBehavior else { return }
         let panel = answerPanel ?? makeAnswerPanel()
+        panel.petIcon = menuIcon
         let head = CGPoint(x: sitting.spot.x, y: sitting.spot.y + scene.cat.size * 1.05)
             .applying(scene.surface.transform(for: scene.screenRect))
         panel.showThinking(question, above: head, within: scene.screenRect)
@@ -749,9 +750,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ActivityLog.shared.cat("llm: answered in \(took)")
                 self.lastAnswer = text
                 self.conversation = history + [Turn(question: question, answer: text)]
-                panel.showAnswer(text)
-                // Through the card's own copy, so the watcher knows it is ours.
-                if c.llmCopyAnswer { panel.copyAnswer() }
+                // Copied through the card, so the watcher knows it is ours.
+                panel.showAnswer(text, autoCopy: c.llmCopyAnswer)
             case .failed(let why):
                 ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
                 panel.showError(why)
@@ -814,7 +814,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func makeAnswerPanel() -> AnswerPanel {
-        let panel = AnswerPanel(palette: scene.config.extras)
+        let panel = AnswerPanel(palette: scene.config.extras,
+                                accent: NSColor(hex: scene.config.furColor) ?? .systemPurple)
         panel.sharingType = window.sharingType
         panel.level = window.level
         panel.onClose = { [weak self] in self?.closeAnswer() }
@@ -1357,6 +1358,14 @@ if CommandLine.arguments.count >= 3, ["--ask", "--ask-image"].contains(CommandLi
         finished = true
     }
     while !finished { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
+    exit(0)
+}
+
+// `--answer-card <path.png>` renders the LLM answer card in each of its
+// states, offscreen, so its look can be checked without asking anything.
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--answer-card" {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    renderAnswerCards(to: CommandLine.arguments[2])
     exit(0)
 }
 
