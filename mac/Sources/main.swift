@@ -343,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let llm = submenu(menu, "LLM mode", tag: 710)
         add(llm, "Answer what I copy or screenshot", #selector(toggleLLMMode), tag: 700)
+        add(llm, "Only when I copy twice (⌘C ⌘C)", #selector(toggleCopyTwice), tag: 704)
         add(llm, "Ask about what I copied now", #selector(askAboutClipboard))
         llm.addItem(.separator())
         add(llm, "Show answer box", #selector(toggleShowAnswers), tag: 702)
@@ -398,6 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tick(700, c.llmMode)
         tick(701, c.llmCopyAnswer)
         tick(702, c.llmShowAnswer)
+        tick(704, c.llmCopyTwice)
         tick(500, c.mode != "crawler")
         tick(501, c.mode == "crawler")
         tick(800, c.pet == "cat")
@@ -678,6 +680,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sender.state = scene.config.llmMode ? .on : .off
     }
 
+    /// Ticked, one copy of text is just a copy: only the same text copied
+    /// twice in a row asks. The watcher restarts so its poll rate changes at
+    /// once.
+    @objc private func toggleCopyTwice(_ sender: NSMenuItem) {
+        scene.config.llmCopyTwice.toggle()
+        Config.update("llmCopyTwice", to: scene.config.llmCopyTwice)
+        applyLLMMode()
+        sender.state = scene.config.llmCopyTwice ? .on : .off
+    }
+
     /// Ticked, each answer goes on the clipboard as it arrives, ready to paste.
     @objc private func toggleCopyAnswers(_ sender: NSMenuItem) {
         scene.config.llmCopyAnswer.toggle()
@@ -707,7 +719,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         if !questions.isRunning { ActivityLog.shared.cat("llm mode on") }
-        questions.start(clipboard: c.llmFromClipboard, screenshots: c.llmFromScreenshots)
+        questions.start(clipboard: c.llmFromClipboard, screenshots: c.llmFromScreenshots,
+                        copyTwice: c.llmCopyTwice)
     }
 
     /// A one-off, with or without LLM mode: ask about the clipboard now.
@@ -735,6 +748,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if (behavior as? AskBehavior)?.isLeaving ?? true { start(.ask, force: true) }
         guard let sitting = behavior as? AskBehavior else { return }
         let panel = answerPanel ?? makeAnswerPanel()
+        panel.petIcon = menuIcon
+        panel.accent = scene.config.answerAccent
         let head = CGPoint(x: sitting.spot.x, y: sitting.spot.y + scene.cat.size * 1.05)
             .applying(scene.surface.transform(for: scene.screenRect))
         panel.showThinking(question, above: head, within: scene.screenRect)
@@ -749,9 +764,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ActivityLog.shared.cat("llm: answered in \(took)")
                 self.lastAnswer = text
                 self.conversation = history + [Turn(question: question, answer: text)]
-                panel.showAnswer(text)
-                // Through the card's own copy, so the watcher knows it is ours.
-                if c.llmCopyAnswer { panel.copyAnswer() }
+                // Copied through the card, so the watcher knows it is ours.
+                panel.showAnswer(text, autoCopy: c.llmCopyAnswer)
             case .failed(let why):
                 ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
                 panel.showError(why)
@@ -814,7 +828,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func makeAnswerPanel() -> AnswerPanel {
-        let panel = AnswerPanel(palette: scene.config.extras)
+        let panel = AnswerPanel(palette: scene.config.extras, accent: scene.config.answerAccent)
         panel.sharingType = window.sharingType
         panel.level = window.level
         panel.onClose = { [weak self] in self?.closeAnswer() }
@@ -1358,6 +1372,20 @@ if CommandLine.arguments.count >= 3, ["--ask", "--ask-image"].contains(CommandLi
     }
     while !finished { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
     exit(0)
+}
+
+// `--answer-card <path.png>` renders the LLM answer card in each of its
+// states, offscreen, so its look can be checked without asking anything.
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--answer-card" {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    renderAnswerCards(to: CommandLine.arguments[2])
+    exit(0)
+}
+
+// `--copy-twice-selftest` checks when a copy counts as a question in
+// copy-twice mode, with scripted copies instead of the real clipboard.
+if CommandLine.arguments.contains("--copy-twice-selftest") {
+    exit(runCopyTwiceSelfTest() ? 0 : 1)
 }
 
 // Only one Screen Cat may run at a time, or you get two cats.
