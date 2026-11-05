@@ -70,8 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // Trash rescue: things thrown from the Desktop to the Trash get dug out.
     private let trashWatch = TrashWatch()
-    /// When each Desktop path was last put back. Thrown away again soon
-    /// after, the cat lets it go: you meant it.
+    /// When each thing was last put back, by path and by file ID (see
+    /// `rescueKeys`). Thrown away again soon after, the cat lets it go: you
+    /// meant it.
     private var rescuedAt: [String: Date] = [:]
 
     /// `--selftest <png>`: run the real on-screen window, force a walk, then
@@ -441,7 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func runHungry() { start(.hungry, force: true) }
     @objc private func runPlay()   { start(.play, force: true) }
     @objc private func runCrawl()  { start(.crawl, force: true) }
-    /// A show of the rescue with nothing real in the cat's mouth.
+    /// A show of the rescue with nothing real on the cat's back.
     @objc private func runRescue() { startRescue([], fromMenu: true) }
     @objc private func runIdleCrawl() { beginIdleCrawl(grace: 1.0) }
 
@@ -706,9 +707,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         trashWatch.start()
     }
 
-    /// Keys for "put back a moment ago": the path it was at, the path it
-    /// came back to, and the item itself, so renaming it does not get it
-    /// rescued twice.
+    /// Keys for "put back a moment ago": the path it was at, and the item
+    /// itself by file ID, so renaming it does not get it rescued twice.
+    /// `putBack` also adds the path it came back to, if that is new.
     private func rescueKeys(_ item: TrashedItem) -> [String] {
         [item.original.path, "#\(item.fileID)"]
     }
@@ -730,14 +731,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (\(paused ? "paused" : "away"))")
             return
         }
-        if let rescue = behavior as? RescueBehavior, rescue.add(wanted) {
+        // A real rescue still on its way in takes more. The menu's show is
+        // forced past the film check, so it does not.
+        if !forced, let rescue = behavior as? RescueBehavior, rescue.add(wanted) {
             ActivityLog.shared.cat("trash rescue: also going after \(names)")
             return
         }
         // Never over an answer card, a game you said yes to, the idle crawl,
-        // or a rescue already on its way out.
-        if behavior is AskBehavior || behavior is PlayBehavior || behavior is IdleCrawlBehavior
-            || behavior is RescueBehavior {
+        // or a rescue already on its way out. A play invite not yet
+        // answered gives way.
+        let playing = (behavior as? PlayBehavior)?.accepted == true
+        if behavior is AskBehavior || playing || behavior is IdleCrawlBehavior || behavior is RescueBehavior {
             ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (cat busy)")
             return
         }

@@ -252,7 +252,7 @@ final class RescueBehavior: Behavior {
     /// that leaves them in the Trash.
     private(set) var restored = false
 
-    /// What the cat has in its mouth, or what is flying, for the overlay.
+    /// What the cat has on its back, or what is flying, for the overlay.
     private(set) var carried: CarriedItem?
     private var tossFrom = CGPoint.zero
     private var tossTo = CGPoint.zero
@@ -294,7 +294,7 @@ final class RescueBehavior: Behavior {
 
         case .digging:
             timer -= dt
-            // Out it pops, up from the Trash into the cat's mouth.
+            // Out it pops, up from the Trash onto the cat's back.
             let popAt: CGFloat = 0.3
             if timer < popAt {
                 let t = 1 - max(timer, 0) / popAt
@@ -315,7 +315,7 @@ final class RescueBehavior: Behavior {
             let done = walk.update(dt, scene)
             carried = held(cat, scene.sheet)
             if done {
-                // Still mid-stride with it in its mouth for the wind-up; it
+                // Still mid-stride with it on its back for the wind-up; it
                 // only looks up once the thing is in the air.
                 stage = .tossing
                 timer = 0

@@ -272,12 +272,14 @@ the screen, then tosses up to the top right of the Desktop. When it lands, the
 real item is moved back from the Trash to where it was. Several things thrown
 at once ride as a small stack and all come back.
 
-- **Once only.** Throw the same thing away again within ten minutes and the
-  pet lets it go: you meant it.
+- **Once only.** Throw the same thing away again within ten minutes (the
+  same item, even renamed, or anything at the same spot on the Desktop) and
+  the pet lets it go: you meant it.
 - **Never in the way.** Nothing happens while the pet is paused, while the
   screen is off, while a blocked app (a film) is in front, or while the pet
-  is busy with an answer card or the idle crawl. The item just stays in the
-  Trash.
+  is busy with an answer card, a game you said yes to, or the idle crawl. A
+  film that comes to the front mid-rescue sends the pet home. The item just
+  stays in the Trash.
 - **Name taken.** If something new has the old name by then, it comes back
   as "name 2", the way Finder numbers copies.
 - **Only the Desktop.** Things thrown away from other folders, emptied

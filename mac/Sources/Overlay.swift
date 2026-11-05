@@ -26,7 +26,7 @@ final class OverlayView: NSView {
     var breaches: [Breach] = []
     var zap: Zap?
     var aura: Aura?
-    /// What the trash rescue has in its mouth or in the air.
+    /// What the trash rescue has on its back or in the air.
     var carried: CarriedItem?
 
     override var isFlipped: Bool { false }
