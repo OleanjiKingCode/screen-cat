@@ -127,8 +127,9 @@ struct Config {
     var llmMode = false
     var llmFromClipboard = true
     var llmFromScreenshots = true
-    /// Ask only when the same thing is copied twice in a row (Cmd+C Cmd+C),
-    /// so an ordinary copy stays an ordinary copy. Off, every copy asks.
+    /// Ask about text only when the same text is copied twice in a row
+    /// (Cmd+C Cmd+C), so an ordinary copy stays an ordinary copy. A copied
+    /// picture still asks at once. Off, every copy asks.
     var llmCopyTwice = true
     /// Put each answer on the clipboard as it arrives, ready to paste.
     var llmCopyAnswer = true
@@ -158,6 +159,13 @@ struct Config {
                       eye: NSColor(hex: eyeColor) ?? .white,
                       ball: NSColor(hex: ballColor) ?? .magenta)
     }
+
+    /// The answer card's accent: the cat's fur colour, or the dog's own tan
+    /// coat, which the colour settings do not change.
+    var answerAccent: NSColor {
+        pet == "dog" ? Self.dogAccent : NSColor(hex: furColor) ?? .systemPurple
+    }
+    static let dogAccent = NSColor(srgbRed: 0xD4 / 255.0, green: 0x91 / 255.0, blue: 0x4F / 255.0, alpha: 1)
 
     /// Colours for the few things drawn rather than blitted: the z's and the
     /// food bowl.

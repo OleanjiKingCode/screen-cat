@@ -6,7 +6,7 @@ import AppKit
 func renderAnswerCards(to path: String) {
     let config = Config.load()
     let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
-    let panel = AnswerPanel(palette: config.extras, accent: NSColor(hex: config.furColor) ?? .systemPurple)
+    let panel = AnswerPanel(palette: config.extras, accent: config.answerAccent)
     panel.showsOnScreen = false
     panel.petIcon = SpriteSheet(resources: resourcesDirectory(), config: config).menuBarIcon()
     var shots: [(String, NSBitmapImageRep)] = []
@@ -23,6 +23,7 @@ func renderAnswerCards(to path: String) {
         rep.size = size
         view.cacheDisplay(in: view.bounds, to: rep)
         shots.append((label, rep))
+        print(String(format: "%@: %.0f x %.0f pt", label, size.width, size.height))
     }
 
     let question = "A train leaves at 3:40 pm and the trip takes 2 h 35 min. What time does it arrive?"
@@ -44,6 +45,31 @@ func renderAnswerCards(to path: String) {
     snap("Screenshot answer, card pushed in from the screen edge")
     panel.showError("Could not find the claude command. Install Claude Code, or set llmClaudePath in settings.")
     snap("No answer")
+
+    // One paragraph: only its first sentence is the headline.
+    panel.showThinking(.text("Is a tomato a fruit?"), above: CGPoint(x: 700, y: 120), within: screen)
+    panel.showAnswer("""
+        Yes, botanically a tomato is a fruit, because it grows from the flower and holds the seeds. \
+        Cooks treat it as a vegetable since it is savoury, and in 1893 the US Supreme Court ruled it a \
+        vegetable for import tax.
+        """, autoCopy: true)
+    snap("One-paragraph answer")
+
+    // A 3,000-character copy and a long answer on a short screen: the asked
+    // line stays at two lines, the body scrolls, and the field stays on screen.
+    let longCopy = String(repeating: "This is a very long copied paragraph about nothing in particular. ", count: 46)
+    let shortScreen = CGRect(x: 0, y: 0, width: 1512, height: 520)
+    panel.showThinking(.text(String(longCopy.prefix(3000))), above: CGPoint(x: 700, y: 120), within: shortScreen)
+    panel.showAnswer("It is filler text with no question in it.\n"
+                     + (1...30).map { "Line \($0) of a long explanation that keeps going." }.joined(separator: "\n"))
+    snap("3,000-character copy, long answer, 384 pt of room above the cat")
+
+    // The dog: its own coat colour and its own icon.
+    panel.accent = Config.dogAccent
+    panel.petIcon = SpriteSheet(resources: resourcesDirectory(), palette: config.spritePalette, pet: "dog").menuBarIcon()
+    panel.showThinking(.text("What is 17 x 23?"), above: CGPoint(x: 700, y: 120), within: screen)
+    panel.showAnswer("391\n17 x 23 = 17 x 20 + 17 x 3 = 340 + 51 = 391.")
+    snap("With the dog")
     stackCardShots(shots, to: path)
 }
 

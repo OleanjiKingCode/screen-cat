@@ -23,18 +23,28 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
             iconView.isHidden = petIcon == nil
         }
     }
+    /// The pill's ANSWER colour and the text selection: the cat's fur, or
+    /// the dog's coat. Set on every ask, so a settings reload shows at once.
+    var accent: NSColor {
+        didSet { textView.selectedTextAttributes = [.backgroundColor: accent.withAlphaComponent(0.35)] }
+    }
     /// Off for offscreen renders, which build the card without showing it.
     var showsOnScreen = true
 
-    static let width: CGFloat = 400
+    private static let width: CGFloat = 400
     private static let maxTextHeight: CGFloat = 360
     private static let side: CGFloat = 16
     private static let headerHeight: CGFloat = 24
     private static let replyHeight: CGFloat = 32
     private static let dotsHeight: CGFloat = 22
+    /// The asked line shows at most this many lines, of at most this many
+    /// characters, so a long copy never pushes the field off the screen.
+    private static let askedLines = 2
+    private static let askedCharacters = 160
+    /// A long first line is cut at its first sentence end for the headline.
+    private static let headlineCharacters = 100
 
     private let ink: NSColor
-    private let accent: NSColor
     private let card = CardView()
     private let iconView = NSImageView()
     private let status = PillView()
@@ -50,6 +60,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     private let reply = NSTextField()
     private let sendButton = CardButton()
     private var bodyHeight: NSLayoutConstraint!
+    private var askedHeight: NSLayoutConstraint!
     private var bodyToCard: NSLayoutConstraint!
     private var bodyToReply: NSLayoutConstraint!
     private var thinkingTimer: Timer?
@@ -91,15 +102,17 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     override func cancelOperation(_ sender: Any?) { closeByUser() }
 
     /// The cat has no Edit menu, so Cmd+X, C, V and A are wired up here for
-    /// the answer and the follow-up field.
+    /// the answer and the follow-up field. A copy or cut made here is the
+    /// cat's own, so `onCopy` marks it and LLM mode does not ask about it.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let actions: [String: Selector] = [
             "x": #selector(NSText.cut(_:)), "c": #selector(NSText.copy(_:)),
             "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
         ]
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           let action = event.charactersIgnoringModifiers.flatMap({ actions[$0] }),
+           let key = event.charactersIgnoringModifiers, let action = actions[key],
            NSApp.sendAction(action, to: nil, from: self) {
+            if key == "c" || key == "x" { onCopy?() }
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -145,7 +158,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
 
         copyButton.target = self
         copyButton.action = #selector(copyAnswer)
-        style(copyButton, symbol: "doc.on.doc", title: "Copy", color: ink)
+        resetCopyButton()
         copyButton.toolTip = "Copy the answer"
         closeButton.target = self
         closeButton.action = #selector(closeByUser)
@@ -157,8 +170,8 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
 
         asked.font = .systemFont(ofSize: 11.5)
         asked.textColor = muted
-        asked.maximumNumberOfLines = 2
-        asked.lineBreakMode = .byTruncatingTail
+        asked.maximumNumberOfLines = Self.askedLines
+        asked.lineBreakMode = .byWordWrapping
         asked.cell?.truncatesLastVisibleLine = true
         asked.preferredMaxLayoutWidth = Self.width - Self.side * 2
 
@@ -212,6 +225,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         }
         let side = Self.side
         bodyHeight = scroll.heightAnchor.constraint(equalToConstant: 20)
+        askedHeight = asked.heightAnchor.constraint(equalToConstant: 14)
         NSLayoutConstraint.activate([
             iconView.widthAnchor.constraint(equalToConstant: 16),
             iconView.heightAnchor.constraint(equalToConstant: 14),
@@ -226,6 +240,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
             asked.topAnchor.constraint(equalTo: right.bottomAnchor, constant: 8),
             asked.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: side),
             asked.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -side),
+            askedHeight,
             divider.topAnchor.constraint(equalTo: asked.bottomAnchor, constant: 10),
             divider.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: side),
             divider.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -side),
@@ -296,13 +311,10 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         answer = text
         setStatus(.answer)
         copyButton.isHidden = false
-        style(copyButton, symbol: "doc.on.doc", title: "Copy", color: ink)
+        resetCopyButton()
         showReply(true)
         setBody(answerText(text))
-        if autoCopy {
-            putOnClipboard()
-            copiedNote.isHidden = false
-        }
+        copiedNote.isHidden = !(autoCopy && putOnClipboard())
     }
 
     func showError(_ text: String) {
@@ -360,10 +372,10 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         switch question {
         case .text(let s):
             prefix = "You copied: "
-            rest = s.split(whereSeparator: \.isNewline).joined(separator: " ")
+            rest = Self.oneLine(s)
         case .followUp(let s):
             prefix = "You asked: "
-            rest = s.split(whereSeparator: \.isNewline).joined(separator: " ")
+            rest = Self.oneLine(s)
         case .image(_, let from):
             prefix = from == "screenshot" ? "Your screenshot" : "Your copied image"
             rest = ""
@@ -374,11 +386,35 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         text.append(NSAttributedString(string: rest, attributes: [
             .font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: muted,
         ]))
-        // Wraps, and the label cuts the second line short with an ellipsis.
+        // Wraps, and the label cuts the last line it has room for short
+        // with an ellipsis. Its height is set to at most two lines, so the
+        // text can never make the card taller than that.
         let para = NSMutableParagraphStyle()
         para.lineBreakMode = .byWordWrapping
         text.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: text.length))
         asked.attributedStringValue = text
+        // Measured with a cell like the label's own, so the two agree to the
+        // point: the full wrapped height, and the height of two lines.
+        let insets = asked.alignmentRectInsets
+        let bounds = CGRect(x: 0, y: 0, width: Self.width - Self.side * 2 + insets.left + insets.right,
+                            height: 10_000)
+        func height(_ string: NSAttributedString) -> CGFloat {
+            let cell = NSTextFieldCell(textCell: "")
+            cell.wraps = true
+            cell.attributedStringValue = string
+            return ceil(cell.cellSize(forBounds: bounds).height)
+        }
+        let lines = Array(repeating: "Xg", count: Self.askedLines).joined(separator: "\n")
+        let cap = height(NSAttributedString(string: lines, attributes: [
+            .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold), .paragraphStyle: para,
+        ]))
+        askedHeight.constant = min(height(text), cap)
+    }
+
+    /// Newlines folded to spaces, cut to `askedCharacters` with an ellipsis.
+    private static func oneLine(_ s: String) -> String {
+        let flat = s.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return flat.count > askedCharacters ? String(flat.prefix(askedCharacters)) + "…" : flat
     }
 
     /// The first line is the answer itself, so it reads as a headline; the
@@ -386,8 +422,15 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     private func answerText(_ raw: String) -> NSAttributedString {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-        let head = String(parts.first ?? "")
-        let rest = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        var head = String(parts.first ?? "")
+        var rest = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        // A one-paragraph answer would be all headline. Past a short line,
+        // the headline is the first sentence and the rest joins the body.
+        if head.count > Self.headlineCharacters, let end = Self.firstSentenceEnd(in: head) {
+            let tail = head[end...].trimmingCharacters(in: .whitespaces)
+            head = String(head[..<end])
+            rest = rest.isEmpty ? tail : tail + "\n" + rest
+        }
 
         let headPara = NSMutableParagraphStyle()
         headPara.lineHeightMultiple = 1.15
@@ -408,6 +451,17 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
             .paragraphStyle: bodyPara,
         ]))
         return out
+    }
+
+    /// Just past the first ". ", "? " or "! ", or nil when there is none.
+    private static func firstSentenceEnd(in line: String) -> String.Index? {
+        var best: String.Index?
+        for mark in [". ", "? ", "! "] {
+            guard let found = line.range(of: mark) else { continue }
+            let end = line.index(after: found.lowerBound)
+            if best.map({ end < $0 }) ?? true { best = end }
+        }
+        return best
     }
 
     private func setBody(_ text: NSAttributedString) {
@@ -454,7 +508,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         style(copyButton, symbol: "checkmark", title: "Copied", color: Self.copiedGreen)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
             guard let self, self.copyFlip == mine else { return }
-            self.style(self.copyButton, symbol: "doc.on.doc", title: "Copy", color: self.ink)
+            self.resetCopyButton()
         }
     }
 
@@ -490,26 +544,37 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         button.invalidateIntrinsicContentSize()
     }
 
+    private func resetCopyButton() {
+        style(copyButton, symbol: "doc.on.doc", title: "Copy", color: ink)
+    }
+
     private func tintSend() {
         let empty = reply.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         sendButton.contentTintColor = empty ? ink.withAlphaComponent(0.25) : ink
     }
 
     /// Fits the card to its content, keeps it inside the screen, and points
-    /// the tail at the cat's head even when the card is pushed sideways.
+    /// the tail at the cat's head even when the card is pushed sideways. A
+    /// card taller than the room above the cat gives up body height, which
+    /// then scrolls, so the follow-up field always stays on the screen.
     private func resize(bodyHeight body: CGFloat) {
-        bodyHeight.constant = body
-        let askedHeight = ceil(asked.intrinsicContentSize.height)
-        let footer = replyBox.isHidden ? 16 : 14 + Self.replyHeight + 12
-        let height = 12 + Self.headerHeight + 8 + askedHeight + 10 + 1 + 12 + body + footer + CardView.tail
         // No screen given yet: use the main one, never an empty rect, which
         // AppKit rejects as a window frame.
         let given = area.width > 24 && area.height > 24 ? area : (NSScreen.main?.visibleFrame ?? .zero)
         let room = given.insetBy(dx: 12, dy: 12)
+        let bottom = min(anchor.y + 4, room.maxY - 120)
+        bodyHeight.constant = body
+        // The height comes from the constraints, so the spacing is written
+        // down once, in buildContent().
+        var height = ceil(card.fittingSize.height)
+        let over = height - (room.maxY - bottom)
+        if over > 0 {
+            bodyHeight.constant = max(40, body - over)
+            height = ceil(card.fittingSize.height)
+        }
         var x = anchor.x - Self.width / 2
         x = min(max(x, room.minX), room.maxX - Self.width)
-        var y = anchor.y + 4
-        y = min(y, room.maxY - height)
+        let y = min(bottom, room.maxY - height)
         card.tailX = anchor.x - x
         setFrame(CGRect(x: x, y: y, width: Self.width, height: height), display: true)
         card.layoutSubtreeIfNeeded()
@@ -632,7 +697,8 @@ final class ReplyBox: NSView {
 }
 
 /// A borderless button with a soft highlight under the pointer. The card is
-/// never the key window, so the hover tracking is always active.
+/// usually not the key window (it only takes the keyboard once you click into
+/// the follow-up field), so the tracking is active whichever window is key.
 final class CardButton: NSButton {
     var hoverFill = NSColor.black.withAlphaComponent(0.06)
     private var hovering = false { didSet { needsDisplay = true } }

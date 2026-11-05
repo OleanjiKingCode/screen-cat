@@ -680,8 +680,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sender.state = scene.config.llmMode ? .on : .off
     }
 
-    /// Ticked, one copy is just a copy: only the same thing copied twice in
-    /// a row asks. The watcher restarts so its poll rate changes at once.
+    /// Ticked, one copy of text is just a copy: only the same text copied
+    /// twice in a row asks. The watcher restarts so its poll rate changes at
+    /// once.
     @objc private func toggleCopyTwice(_ sender: NSMenuItem) {
         scene.config.llmCopyTwice.toggle()
         Config.update("llmCopyTwice", to: scene.config.llmCopyTwice)
@@ -748,6 +749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let sitting = behavior as? AskBehavior else { return }
         let panel = answerPanel ?? makeAnswerPanel()
         panel.petIcon = menuIcon
+        panel.accent = scene.config.answerAccent
         let head = CGPoint(x: sitting.spot.x, y: sitting.spot.y + scene.cat.size * 1.05)
             .applying(scene.surface.transform(for: scene.screenRect))
         panel.showThinking(question, above: head, within: scene.screenRect)
@@ -826,8 +828,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func makeAnswerPanel() -> AnswerPanel {
-        let panel = AnswerPanel(palette: scene.config.extras,
-                                accent: NSColor(hex: scene.config.furColor) ?? .systemPurple)
+        let panel = AnswerPanel(palette: scene.config.extras, accent: scene.config.answerAccent)
         panel.sharingType = window.sharingType
         panel.level = window.level
         panel.onClose = { [weak self] in self?.closeAnswer() }
