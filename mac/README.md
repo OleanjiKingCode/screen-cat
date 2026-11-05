@@ -150,21 +150,24 @@ Render it headless with `--playground out.png [seconds]`.
 ## LLM mode
 
 Tick **LLM mode (answers what you copy or screenshot)** in the menu. From then
-on, whatever you copy, and every screenshot you take, goes to Claude. The cat
-walks on, sits, and holds up a card: "THINKING..." with what you asked, then
-the answer. It works out what you want: a question gets answered, an equation
+on, whatever you copy twice in a row (Cmd+C Cmd+C, within a second), and every
+screenshot you take, goes to Claude. One copy is just a copy, so everyday
+copying never asks. The cat walks on, sits, and holds up a card: what you
+asked, pulsing dots while it thinks, then the answer, with its first line as a
+headline. It works out what you want: a question gets answered, an equation
 or sum gets solved with the steps, a claim gets checked, a word gets explained,
 code or an error gets explained or fixed. The answer is plain text you can
 select. Each answer also goes on the clipboard as it arrives, ready to paste
 (**Copy answers to clipboard** in the menu, `llmCopyAnswer`, on by default);
-**COPY** on the card copies it again. The card stays up until you close it
+**Copy** on the card copies it again, and the card's header says "Copied to
+clipboard" when the answer went there by itself. The card stays up until you close it
 with the ✕ or Esc, even through the screen going off, and then the cat walks
 off. You can drag the card.
 A new question while the cat is sitting reuses the same card.
 
 **Follow-ups.** Under each answer is an "Ask a follow-up…" field. Click it,
 type a question about the answer or a request ("shorter", "explain step 2",
-"in French") and press Enter or **ASK**. Claude gets the conversation so far,
+"in French") and press Enter or the arrow. Claude gets the conversation so far,
 the first copy or screenshot included, and the new answer replaces the old one
 on the card. Keep going as long as you like. A new copy or screenshot starts a
 fresh conversation, and closing the card forgets it. The card only takes the
@@ -176,6 +179,11 @@ clipboard, whatever **Copy answers to clipboard** says, and the cat in the menu
 bar shows 💭 while it thinks, then ✅ when the answer is ready to paste (⚠️ if
 there is no answer; hover the icon for why). Unticking it while a card is up
 closes the card.
+
+**Only when I copy twice (⌘C ⌘C)** (`llmCopyTwice`, on by default) is what
+keeps ordinary copying quiet: only the same thing copied twice in a row,
+within about a second, asks. A copy that some apps write to the clipboard
+twice still counts as one. Untick it and every copy asks, as before.
 
 **Ask about what I copied** asks about the clipboard once, with or without LLM
 mode.
@@ -190,11 +198,15 @@ mode.
   for access to the Desktop folder. The file only appears after the floating
   thumbnail goes, about 5 seconds; turn the thumbnail off in the Screenshot
   app's Options for a faster answer. A screenshot copied to the clipboard
-  (Control in the shortcut) is picked up at once.
-- **What is never sent**: anything a password manager marks as private, files
+  (Control in the shortcut) is picked up at once when **Only when I copy
+  twice** is off. With it on, a copied screenshot is one copy like any other;
+  save the screenshot instead, or use **Ask about what I copied now**.
+- **What is never sent**: anything you copy only once (while **Only when I
+  copy twice** is on), anything a password manager marks as private, files
   copied in Finder, what was already on the clipboard when you turned the mode
-  on, the same text twice in a row, and text copied out of the cat's own card.
-  Everything else you copy is sent to Anthropic while the mode is on.
+  on, and text copied out of the cat's own card. With **Only when I copy
+  twice** off, everything else you copy is sent to Anthropic while the mode is
+  on, except the same text twice in a row.
 - **Screenshots & recordings**: the card follows the cat. With **Show in
   screenshots & recordings** unticked (the default), neither shows up in
   captures or screen sharing; ticked, both do. LLM mode works either way.
@@ -202,7 +214,10 @@ mode.
   still works while paused.
 
 Test it without the cat: `--ask "2x^2 - 8x + 6 = 0"` or
-`--ask-image screenshot.png` prints the answer.
+`--ask-image screenshot.png` prints the answer. `--answer-card out.png`
+renders the card in each of its states, offscreen, and
+`--copy-twice-selftest` checks when a copy counts as a question, with scripted
+copies rather than your clipboard.
 
 ## Activity log
 
@@ -331,6 +346,8 @@ the answer box is hidden. The menu, top to bottom:
   I touch something, and Zero Day (3 min hack).
 - **LLM mode: On / Off** (see LLM mode):
   - **Answer what I copy or screenshot**: the mode itself.
+  - **Only when I copy twice (⌘C ⌘C)**: on by default; untick it to answer
+    every copy.
   - **Ask about what I copied now**: once, with or without the mode.
   - **Show answer box** and **Copy answers to clipboard**.
   - **Set API key…**: paste an Anthropic API key, kept in the keychain. With a
@@ -417,6 +434,7 @@ SHA-256 for the release notes.
 | `steppedOut` | `false` | Keep the Mac awake and the screen on. Also on the menu as **Stepped out**. |
 | `llmMode` | `false` | Answer what you copy and screenshot. Also on the menu as **LLM mode**. |
 | `llmFromClipboard` / `llmFromScreenshots` | `true` / `true` | Which of the two LLM mode listens to. |
+| `llmCopyTwice` | `true` | Ask only when the same thing is copied twice in a row (Cmd+C Cmd+C). `false` asks on every copy. Also on the menu as **Only when I copy twice**. |
 | `llmCopyAnswer` | `true` | Put each answer on the clipboard as it arrives. Also on the menu as **Copy answers to clipboard**. |
 | `llmShowAnswer` | `true` | Show the cat and the answer card. `false` sends answers only to the clipboard, with a badge on the menu bar icon. Also on the menu as **Show answer box**. |
 | `llmModel` | `claude-opus-5-5` | The Claude model that answers. |

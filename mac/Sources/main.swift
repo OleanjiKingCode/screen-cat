@@ -343,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let llm = submenu(menu, "LLM mode", tag: 710)
         add(llm, "Answer what I copy or screenshot", #selector(toggleLLMMode), tag: 700)
+        add(llm, "Only when I copy twice (⌘C ⌘C)", #selector(toggleCopyTwice), tag: 704)
         add(llm, "Ask about what I copied now", #selector(askAboutClipboard))
         llm.addItem(.separator())
         add(llm, "Show answer box", #selector(toggleShowAnswers), tag: 702)
@@ -398,6 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tick(700, c.llmMode)
         tick(701, c.llmCopyAnswer)
         tick(702, c.llmShowAnswer)
+        tick(704, c.llmCopyTwice)
         tick(500, c.mode != "crawler")
         tick(501, c.mode == "crawler")
         tick(800, c.pet == "cat")
@@ -678,6 +680,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sender.state = scene.config.llmMode ? .on : .off
     }
 
+    /// Ticked, one copy is just a copy: only the same thing copied twice in
+    /// a row asks. The watcher restarts so its poll rate changes at once.
+    @objc private func toggleCopyTwice(_ sender: NSMenuItem) {
+        scene.config.llmCopyTwice.toggle()
+        Config.update("llmCopyTwice", to: scene.config.llmCopyTwice)
+        applyLLMMode()
+        sender.state = scene.config.llmCopyTwice ? .on : .off
+    }
+
     /// Ticked, each answer goes on the clipboard as it arrives, ready to paste.
     @objc private func toggleCopyAnswers(_ sender: NSMenuItem) {
         scene.config.llmCopyAnswer.toggle()
@@ -707,7 +718,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         if !questions.isRunning { ActivityLog.shared.cat("llm mode on") }
-        questions.start(clipboard: c.llmFromClipboard, screenshots: c.llmFromScreenshots)
+        questions.start(clipboard: c.llmFromClipboard, screenshots: c.llmFromScreenshots,
+                        copyTwice: c.llmCopyTwice)
     }
 
     /// A one-off, with or without LLM mode: ask about the clipboard now.
@@ -1367,6 +1379,12 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--answer-card"
     NSApplication.shared.setActivationPolicy(.prohibited)
     renderAnswerCards(to: CommandLine.arguments[2])
     exit(0)
+}
+
+// `--copy-twice-selftest` checks when a copy counts as a question in
+// copy-twice mode, with scripted copies instead of the real clipboard.
+if CommandLine.arguments.contains("--copy-twice-selftest") {
+    exit(runCopyTwiceSelfTest() ? 0 : 1)
 }
 
 // Only one Screen Cat may run at a time, or you get two cats.

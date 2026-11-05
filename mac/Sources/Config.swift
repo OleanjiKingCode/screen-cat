@@ -127,6 +127,9 @@ struct Config {
     var llmMode = false
     var llmFromClipboard = true
     var llmFromScreenshots = true
+    /// Ask only when the same thing is copied twice in a row (Cmd+C Cmd+C),
+    /// so an ordinary copy stays an ordinary copy. Off, every copy asks.
+    var llmCopyTwice = true
     /// Put each answer on the clipboard as it arrives, ready to paste.
     var llmCopyAnswer = true
     /// Show the cat and the answer card. Off, answers only go to the
@@ -233,6 +236,7 @@ struct Config {
         c.llmMode               = bool("llmMode")              ?? c.llmMode
         c.llmFromClipboard      = bool("llmFromClipboard")     ?? c.llmFromClipboard
         c.llmFromScreenshots    = bool("llmFromScreenshots")   ?? c.llmFromScreenshots
+        c.llmCopyTwice          = bool("llmCopyTwice")         ?? c.llmCopyTwice
         c.llmCopyAnswer         = bool("llmCopyAnswer")        ?? c.llmCopyAnswer
         c.llmShowAnswer         = bool("llmShowAnswer")        ?? c.llmShowAnswer
         c.llmModel              = str("llmModel")              ?? c.llmModel
@@ -347,6 +351,7 @@ struct Config {
             "llmMode": d.llmMode,
             "llmFromClipboard": d.llmFromClipboard,
             "llmFromScreenshots": d.llmFromScreenshots,
+            "llmCopyTwice": d.llmCopyTwice,
             "llmCopyAnswer": d.llmCopyAnswer,
             "llmShowAnswer": d.llmShowAnswer,
             "llmModel": d.llmModel,

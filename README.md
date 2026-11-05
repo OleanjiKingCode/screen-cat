@@ -31,7 +31,7 @@
   </tr>
   <tr>
     <td><b>A real little roommate.</b> It walks along the bottom and the sides of your screen, naps with z's, chases its ball, begs for food, and asks you to play. Rest your pointer on it and it gets petted.</td>
-    <td><b>It answers what you copy.</b> Turn on LLM mode, copy a question or take a screenshot, and the pet walks out holding the answer: maths solved with the steps, facts checked, code explained, words defined. The answer is also put on your clipboard, ready to paste.</td>
+    <td><b>It answers what you copy.</b> Turn on LLM mode, copy a question twice (Cmd+C Cmd+C) or take a screenshot, and the pet walks out holding the answer: maths solved with the steps, facts checked, code explained, words defined. The answer is also put on your clipboard, ready to paste.</td>
   </tr>
   <tr>
     <td><img src="docs/media/cat-or-dog.png" alt="The purple cat and the tan pixel dog sit side by side, both in gold chains"></td>
@@ -66,8 +66,8 @@ Needs macOS 12 or later, Apple silicon or Intel.
 
 Open the menu and go to **LLM mode > Answer what I copy or screenshot**. From then on:
 
-- **Copy** any text (a question, an equation, a claim, a word, an error message) and the pet walks on with a card: THINKING, then the answer.
-- **Take a screenshot** (Cmd+Shift+4) and it answers what is in it. Add Control (Cmd+Ctrl+Shift+4) to copy the screenshot instead, which it picks up instantly.
+- **Copy any text twice in a row** (Cmd+C Cmd+C, within a second): a question, an equation, a claim, a word, an error message. The pet walks on with a card: what you asked, dots while it thinks, then the answer, its first line in bold. One copy is just a copy, so everyday copying never asks. To answer every copy instead, untick **LLM mode > Only when I copy twice (⌘C ⌘C)**.
+- **Take a screenshot** (Cmd+Shift+4) and it answers what is in it. With **Only when I copy twice** unticked, add Control (Cmd+Ctrl+Shift+4) to copy the screenshot instead, which it picks up instantly.
 - **Ask a follow-up** in the field under the answer: a question about it, or a request like "shorter", "explain step 2" or "in French". Press Enter and the answer comes back on the same card, with the conversation so far. A new copy or screenshot starts a fresh conversation.
 - **Ask about what I copied now** asks once, with or without the mode on.
 - **Show answer box** off: no pet, no card, the answer just lands on your clipboard. The menu bar icon shows 💭 while it thinks and ✅ when the answer is ready to paste.
@@ -77,7 +77,7 @@ Open the menu and go to **LLM mode > Answer what I copy or screenshot**. From th
 - **Your own Anthropic API key.** Choose **LLM mode > Set API key…** and paste a key from [console.anthropic.com](https://console.anthropic.com). It is kept in your Mac's keychain. You pay Anthropic per answer, usually a few cents at most.
 - **Claude Code.** No key? If [Claude Code](https://claude.com/claude-code) is installed and logged in, Screen Cat uses it.
 
-**What is never sent:** anything a password manager marks as private, files copied in Finder, whatever was already on the clipboard when you turned the mode on, the same text twice in a row, and text copied out of the pet's own card. Everything else you copy while LLM mode is on is sent to Anthropic to be answered.
+**What is never sent:** anything you copy only once (while **Only when I copy twice** is on, the default), anything a password manager marks as private, files copied in Finder, whatever was already on the clipboard when you turned the mode on, and text copied out of the pet's own card. With **Only when I copy twice** off, everything else you copy while LLM mode is on is sent to Anthropic to be answered, except the same text twice in a row.
 
 ## The menu
 
@@ -88,7 +88,7 @@ Open the menu and go to **LLM mode > Answer what I copy or screenshot**. From th
 | **Pet: Cat / Dog** | Switch pets. |
 | **Mode: Normal / Crawler** | Normal routines, or window-zapping hacker visits. |
 | **Play now** | Walk, nap, ball, beg, ask to play, break some apps, crawl, Zero Day. |
-| **LLM mode** | Turn answering on or off, show or hide the answer box, copy answers, set your API key. |
+| **LLM mode** | Turn answering on or off, ask only on a double copy or on every copy, show or hide the answer box, copy answers, set your API key. |
 | **Stepped out** | Keep the Mac awake. A ☕ shows by the icon. |
 | **Show in screenshots & recordings** | Let captures see the pet and its card. |
 | **Open at login** | Start Screen Cat when you log in. |

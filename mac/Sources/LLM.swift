@@ -356,6 +356,87 @@ func pngForUpload(_ image: NSImage) -> Data? {
     return rep.representation(using: .png, properties: [:])
 }
 
+/// Copy-twice mode's trigger: the same thing copied twice in a row, within
+/// `window` seconds, is a question; one copy is just a copy. It is fed every
+/// poll of the clipboard's change count. All the changes one poll sees count
+/// as ONE copy, because some apps clear and then write the clipboard for a
+/// single Cmd+C, and those would otherwise ask on every copy.
+struct CopyTwiceDetector {
+    var window: TimeInterval = 1.0
+    private var lastCount: Int
+    private var first: (key: String, at: TimeInterval)?
+
+    init(changeCount: Int) { lastCount = changeCount }
+
+    /// True when this poll completes a double copy. `key` is read only when
+    /// the clipboard changed; nil means it can never be a question, and it
+    /// breaks any pair in progress.
+    mutating func poll(changeCount: Int, at time: TimeInterval, key: () -> String?) -> Bool {
+        guard changeCount != lastCount else { return false }
+        lastCount = changeCount
+        guard let key = key() else {
+            first = nil
+            return false
+        }
+        if let pending = first, pending.key == key, time - pending.at <= window {
+            first = nil
+            return true
+        }
+        first = (key, time)
+        return false
+    }
+}
+
+/// `--copy-twice-selftest`: plays scripted copy sequences through the
+/// detector, polled every 0.05 s as the app does, and prints PASS or FAIL for
+/// each. Never touches the real clipboard, except to time how long reading
+/// its change count takes.
+func runCopyTwiceSelfTest() -> Bool {
+    struct Copy { let at: TimeInterval; let bump: Int; let key: String? }
+    let cases: [(String, [Copy], Int)] = [
+        ("single copy", [Copy(at: 0.12, bump: 1, key: "a")], 0),
+        ("double copy 0.3 s apart", [Copy(at: 0.12, bump: 1, key: "a"), Copy(at: 0.42, bump: 1, key: "a")], 1),
+        ("double copy 1.5 s apart", [Copy(at: 0.12, bump: 1, key: "a"), Copy(at: 1.62, bump: 1, key: "a")], 0),
+        ("one copy that bumps the count by 2", [Copy(at: 0.12, bump: 2, key: "a")], 0),
+        ("two different texts", [Copy(at: 0.12, bump: 1, key: "a"), Copy(at: 0.42, bump: 1, key: "b")], 0),
+        ("triple copy", [Copy(at: 0.12, bump: 1, key: "a"), Copy(at: 0.37, bump: 1, key: "a"),
+                         Copy(at: 0.62, bump: 1, key: "a")], 1),
+        ("double copy of a password", [Copy(at: 0.12, bump: 1, key: nil), Copy(at: 0.42, bump: 1, key: nil)], 0),
+        ("double copy in an app that writes twice", [Copy(at: 0.12, bump: 2, key: "a"),
+                                                     Copy(at: 0.42, bump: 2, key: "a")], 1),
+        ("double copy, then the same text once more later",
+         [Copy(at: 0.12, bump: 1, key: "a"), Copy(at: 0.42, bump: 1, key: "a"), Copy(at: 2.02, bump: 1, key: "a")], 1),
+    ]
+    var allPassed = true
+    for (name, copies, expected) in cases {
+        var detector = CopyTwiceDetector(changeCount: 100)
+        var count = 100
+        var current: String?
+        var next = 0
+        var asks = 0
+        for tick in 0...80 {
+            let now = Double(tick) * 0.05
+            while next < copies.count, copies[next].at <= now {
+                count += copies[next].bump
+                current = copies[next].key
+                next += 1
+            }
+            if detector.poll(changeCount: count, at: now, key: { current }) { asks += 1 }
+        }
+        let passed = asks == expected
+        allPassed = allPassed && passed
+        print("\(passed ? "PASS" : "FAIL")  \(name): asked \(asks), expected \(expected)")
+    }
+    let reads = 2000
+    let started = ProcessInfo.processInfo.systemUptime
+    var sum = 0
+    for _ in 0..<reads { sum &+= NSPasteboard.general.changeCount }
+    let each = (ProcessInfo.processInfo.systemUptime - started) / Double(reads) * 1_000_000
+    print(String(format: "reading the change count: %.1f microseconds a read, %.2f ms a second at 20 polls",
+                 each, each * 20 / 1000))
+    return allPassed
+}
+
 /// LLM mode's ears: new clipboard contents and new screenshots.
 final class QuestionWatch {
     var onQuestion: ((Question) -> Void)?
@@ -368,6 +449,9 @@ final class QuestionWatch {
     private var timer: Timer?
     private var lastChange = 0
     private var lastText = ""
+    /// Only a copy made twice in a row asks. See `CopyTwiceDetector`.
+    private var copyTwice = false
+    private var detector = CopyTwiceDetector(changeCount: 0)
     private var sources: [DispatchSourceFileSystemObject] = []
     private var folders: [URL] = []
     private var seen: Set<String> = []
@@ -385,12 +469,18 @@ final class QuestionWatch {
     var isRunning: Bool { timer != nil || !sources.isEmpty }
 
     /// Only what changes after this call counts. Whatever is already on the
-    /// clipboard, or already on the Desktop, is left alone.
-    func start(clipboard: Bool, screenshots: Bool) {
+    /// clipboard, or already on the Desktop, is left alone. With `copyTwice`,
+    /// one copy is ignored and only the same thing copied twice in a row asks.
+    func start(clipboard: Bool, screenshots: Bool, copyTwice: Bool) {
         stop()
         lastChange = NSPasteboard.general.changeCount
+        self.copyTwice = copyTwice
+        detector = CopyTwiceDetector(changeCount: lastChange)
         if clipboard {
-            let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in self?.checkClipboard() }
+            // Fast enough in copy-twice mode that the two presses of a quick
+            // Cmd+C Cmd+C land in two different polls.
+            let interval = copyTwice ? 0.05 : 0.4
+            let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in self?.checkClipboard() }
             RunLoop.main.add(t, forMode: .common)
             timer = t
         }
@@ -424,8 +514,36 @@ final class QuestionWatch {
         return nil
     }
 
+    /// A cheap fingerprint of what is on the clipboard, to tell whether two
+    /// copies were of the same thing. Nil for what can never be a question:
+    /// private, a file, or nothing usable.
+    static func clipboardKey() -> String? {
+        let pb = NSPasteboard.general
+        let types = (pb.types ?? []).map(\.rawValue)
+        guard Set(types).isDisjoint(with: privateTypes),
+              !types.contains(NSPasteboard.PasteboardType.fileURL.rawValue) else { return nil }
+        let text = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if text.count >= 2 { return "text:" + text }
+        if let image = pb.data(forType: .png) ?? pb.data(forType: .tiff) {
+            return "image:\(types.joined(separator: ",")):\(image.count)"
+        }
+        return nil
+    }
+
     private func checkClipboard() {
         let pb = NSPasteboard.general
+        if copyTwice {
+            let count = pb.changeCount
+            let doubled = detector.poll(changeCount: count, at: ProcessInfo.processInfo.systemUptime) {
+                count == ownChange ? nil : Self.clipboardKey()
+            }
+            guard doubled, let question = Self.clipboardQuestion() else { return }
+            // A double copy is on purpose, so the same text asks again; only
+            // text copied out of the cat's own card is skipped.
+            if case .text(let s) = question, isOwnText?(s) ?? false { return }
+            onQuestion?(question)
+            return
+        }
         guard pb.changeCount != lastChange else { return }
         lastChange = pb.changeCount
         guard pb.changeCount != ownChange, let question = Self.clipboardQuestion() else { return }
