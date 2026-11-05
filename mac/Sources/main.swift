@@ -1291,8 +1291,10 @@ extension AppDelegate {
             }
             return petLeft > 0
         }
-        // The play invite has its own dwell on the same pointer.
-        guard scene.config.petSeconds > 0, cat.visible, !(behavior is PlayBehavior) else {
+        // The play invite has its own dwell on the same pointer. A rescue is
+        // busy, and a pet would leave what it carries hanging in the air.
+        guard scene.config.petSeconds > 0, cat.visible, !(behavior is PlayBehavior),
+              !(behavior is RescueBehavior) else {
             petDwell = 0
             return false
         }

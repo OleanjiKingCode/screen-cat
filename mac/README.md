@@ -226,7 +226,7 @@ Rest the pointer on the cat for `petSeconds` (1s) and it stops, sits and shows
 two hearts, then carries on. A sleeping cat stays asleep and just gets the
 hearts. It is hover only, so no click is taken from the app underneath. Move off
 the cat before it can be petted again. Not during the play invite, which has its
-own dwell.
+own dwell, and not during a trash rescue: it is busy.
 
 ## Saying yes to a game
 
@@ -295,7 +295,7 @@ exactly under it.
 
 Untick **Rescue things I trash from the Desktop** in the menu, or set
 `trashRescue` to `false`, to turn it off. **Play now > Dig something out of
-the Trash** shows the routine with nothing real in its paws.
+the Trash** shows the routine with nothing real on its back.
 
 ## Where it shows up
 
