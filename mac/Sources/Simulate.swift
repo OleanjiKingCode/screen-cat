@@ -29,6 +29,7 @@ func runSimulation(routine: Routine, to path: String) {
     let view = OverlayView(frame: CGRect(origin: .zero, size: stage.size))
     view.scene = scene
     view.sheet = SpriteSheet(resources: resourcesDirectory(), config: cfg)
+    scene.sheet = view.sheet
     view.extras = cfg.extras
     view.drawShadows = cfg.shadow
     window.contentView = view
@@ -52,6 +53,11 @@ func runSimulation(routine: Routine, to path: String) {
     let fakeWindows = [CGRect(x: 120, y: 300, width: 520, height: 380),
                        CGRect(x: 820, y: 220, width: 560, height: 520)]
     scene.crawlTargets = fakeWindows
+    // A pretend folder and a Trash near the bottom right, like a bottom Dock.
+    let fakeTrash = TrashedItem(original: URL(fileURLWithPath: "/tmp/Lisbon trip"),
+                                inTrash: URL(fileURLWithPath: "/tmp/.Trash/Lisbon trip"), isFolder: true, fileID: 0)
+    scene.rescueItems = [fakeTrash]
+    scene.trashX = stage.width * 0.78
     let behavior = makeBehavior(routine, scene: scene)
     scene.cat.visible = true
 
@@ -81,6 +87,8 @@ func runSimulation(routine: Routine, to path: String) {
     probeScene.setStage(surface: surface, screen: stage, catSize: scene.cat.size)
     probeScene.applyDepth()
     probeScene.crawlTargets = fakeWindows
+    probeScene.rescueItems = scene.rescueItems
+    probeScene.trashX = scene.trashX
     let probe = makeBehavior(routine, scene: probeScene)
     var probeTime: CGFloat = 0
     while probeTime < maxSeconds {
@@ -125,6 +133,7 @@ func runSimulation(routine: Routine, to path: String) {
         view.breaches = (behavior as? BreachSource)?.breaches ?? []
         view.zap = (behavior as? BreachSource)?.zap
         view.aura = (behavior as? BreachSource)?.aura
+        view.carried = (behavior as? RescueBehavior)?.carried
 
         if elapsed >= nextSnapshotAt && snapshots.count < wantSnapshots {
             if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
