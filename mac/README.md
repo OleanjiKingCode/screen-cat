@@ -272,7 +272,7 @@ the screen, then tosses up to the top right of the Desktop. When it lands, the
 real item is moved back from the Trash to where it was. Several things thrown
 at once ride as a small stack and all come back.
 
-- **Once only.** Throw the same thing away again within ten minutes (the
+- **Once in ten minutes.** Throw the same thing away again within ten minutes (the
   same item, even renamed, or anything at the same spot on the Desktop) and
   the pet lets it go: you meant it.
 - **Never in the way.** Nothing happens while the pet is paused, while the
@@ -370,7 +370,7 @@ the answer box is hidden. The menu, top to bottom:
   sleeps it.
 - **Rescue things I trash from the Desktop**: ticked (the default), the pet
   digs things thrown from the Desktop out of the Trash and puts them back,
-  once each (see Trash rescue).
+  once in ten minutes for each thing (see Trash rescue).
 - **Show in screenshots & recordings**: ticked, the pet and its answer card
   appear in captures. Unticked (the default) they stay out of them.
 - **Open at login**: writes or removes the same LaunchAgent as
