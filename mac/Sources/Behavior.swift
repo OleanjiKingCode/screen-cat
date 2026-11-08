@@ -19,6 +19,9 @@ final class Scene {
     /// surface-local x on the floor.
     var rescueItems: [TrashedItem] = []
     var trashX: CGFloat = 0
+    /// Where Finder sits in the Dock, surface-local. Things thrown from a
+    /// folder other than the Desktop are tossed back there.
+    var finderSpot: CGPoint = .zero
     /// The loaded sprites, for routines that need to know where the body is.
     var sheet: SpriteSheet?
 

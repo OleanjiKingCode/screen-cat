@@ -46,7 +46,7 @@
 And a few quieter things:
 
 - **Private by default.** The pet and its answer card stay out of screenshots, screen recordings and screen sharing, unless you tick **Show in screenshots & recordings**.
-- **Trash rescue.** Drag something from the Desktop to the Trash and the pet runs to the Trash, digs it out, carries it back on its back and tosses it onto the Desktop, where it really is again. Throw the same thing away again within ten minutes and it lets it go. Untick **Rescue things I trash from the Desktop** to stop it.
+- **Trash rescue.** Drag something from the Desktop, Documents or Downloads (or a folder inside them) to the Trash and the pet runs to the Trash, digs it out, carries it back on its back and tosses it home, where it really is again. Throw the same thing away again within ten minutes and it lets it go. Untick **Rescue things I trash** to stop it.
 - **Stays out of the way.** It hides while a video player (VLC, IINA, QuickTime, TV, Netflix, Plex, Infuse) is in front.
 - **Idle takeover.** Leave the Mac alone for half an hour and the pet grows and turns the screen into a glitch show. The first touch ends it and puts you back in your app.
 - **Stepped out.** One click keeps your Mac awake and the screen on, like `caffeinate`.
@@ -90,7 +90,7 @@ Open the menu and go to **LLM mode > Turn LLM mode on**. From then on (until you
 | **Play now** | Walk, nap, ball, beg, ask to play, dig something out of the Trash, break some apps, crawl, Zero Day. |
 | **LLM mode** | Turn answering on or off, show or hide the answer box, copy answers, set your API key. |
 | **Stepped out** | Keep the Mac awake. A ☕ shows by the icon. |
-| **Rescue things I trash from the Desktop** | The pet puts back what you throw away from the Desktop, once in ten minutes. |
+| **Rescue things I trash** | The pet puts back what you throw away from the Desktop, Documents and Downloads, once in ten minutes. |
 | **Show in screenshots & recordings** | Let captures see the pet and its card. |
 | **Open at login** | Start Screen Cat when you log in. |
 | **Open playground** | A window with its own pet and pretend apps to play in. |
@@ -108,7 +108,8 @@ Everything is in `~/.screencat.json`, created on first launch. Edit it with **Se
 | `minGapSeconds` / `maxGapSeconds` | `3` / `15` | Quiet time between visits. |
 | `blockedApps` | video players | Apps that make the pet hide while they are in front. |
 | `idleCrawlSeconds` | `1800` | Idle time before the glitch takeover. |
-| `trashRescue` | `true` | Dig things thrown from the Desktop out of the Trash. |
+| `trashRescue` | `true` | Dig things thrown from the watched folders out of the Trash. |
+| `trashRescueFolders` | Desktop, Documents, Downloads | The folders the trash rescue watches, with every folder inside them. |
 | `llmModel` / `llmEffort` | `claude-opus-5-5` / `medium` | Which Claude model answers, and how hard it thinks. |
 | `activityLog` | `true` | Keep the local activity log. |
 

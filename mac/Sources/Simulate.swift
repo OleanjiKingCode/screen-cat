@@ -53,11 +53,21 @@ func runSimulation(routine: Routine, to path: String) {
     let fakeWindows = [CGRect(x: 120, y: 300, width: 520, height: 380),
                        CGRect(x: 820, y: 220, width: 560, height: 520)]
     scene.crawlTargets = fakeWindows
-    // A pretend folder and a Trash near the bottom right, like a bottom Dock.
-    let fakeTrash = TrashedItem(original: URL(fileURLWithPath: "/tmp/Lisbon trip"),
+    // A pretend folder and a Trash near the bottom right, like a bottom Dock,
+    // with Finder at the other end. The folder sits on the Desktop, or in
+    // the home folder named by `--from`, such as `--from Documents`.
+    let from: String = {
+        if let i = CommandLine.arguments.firstIndex(of: "--from"), i + 1 < CommandLine.arguments.count {
+            return CommandLine.arguments[i + 1].capitalized
+        }
+        return "Desktop"
+    }()
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let fakeTrash = TrashedItem(original: home.appendingPathComponent("\(from)/Lisbon trip", isDirectory: true),
                                 inTrash: URL(fileURLWithPath: "/tmp/.Trash/Lisbon trip"), isFolder: true, fileID: 0)
     scene.rescueItems = [fakeTrash]
     scene.trashX = stage.width * 0.78
+    scene.finderSpot = CGPoint(x: stage.width * 0.22, y: 0)
     let behavior = makeBehavior(routine, scene: scene)
     scene.cat.visible = true
 
@@ -89,6 +99,7 @@ func runSimulation(routine: Routine, to path: String) {
     probeScene.crawlTargets = fakeWindows
     probeScene.rescueItems = scene.rescueItems
     probeScene.trashX = scene.trashX
+    probeScene.finderSpot = scene.finderSpot
     let probe = makeBehavior(routine, scene: probeScene)
     var probeTime: CGFloat = 0
     while probeTime < maxSeconds {

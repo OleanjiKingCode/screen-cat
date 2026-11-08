@@ -3,9 +3,9 @@ import CoreServices
 
 // MARK: - Watching the Trash
 
-/// Something you dragged from the Desktop to the Trash.
+/// Something you threw in the Trash from a watched folder.
 struct TrashedItem {
-    /// Where it was before, on the Desktop.
+    /// Where it was before: in a watched folder, or a folder inside one.
     let original: URL
     /// Where Finder put it. Finder renames it if the name is already taken in
     /// the Trash, so this is not always the original name.
@@ -16,29 +16,46 @@ struct TrashedItem {
     let fileID: UInt64
 
     var name: String { original.lastPathComponent }
+
+    /// True when its icon was right on the Desktop, not in a folder there.
+    var wasOnDesktop: Bool {
+        original.deletingLastPathComponent().path == TrashWatch.desktop.resolvingSymlinksInPath().path
+    }
 }
 
-/// Sees things go from the Desktop to the Trash.
+/// Why something stayed in the Trash, in plain words for the activity log.
+struct RescueMiss: Error {
+    let why: String
+}
+
+/// Sees things go from the watched folders to the Trash.
 ///
 /// `~/.Trash` cannot be listed without Full Disk Access, but FSEvents still
-/// reports both ends of a move into it: the Desktop path that went away and
-/// the Trash path that appeared. The two ends carry the same file ID, which
-/// is how they are paired. Nothing here reads the files themselves.
+/// reports both ends of a move into it: the path that went away and the
+/// Trash path that appeared. The two ends carry the same file ID, which is
+/// how they are paired. FSEvents also reports every folder inside a watched
+/// one. Nothing here reads the files or looks inside the watched folders,
+/// so watching never makes macOS ask for access to them.
 final class TrashWatch {
     var onTrashed: (([TrashedItem]) -> Void)?
 
-    let folder: URL
+    /// The folders being watched, as `folders(_:)` gave them.
+    private(set) var folders: [URL] = []
     let trash: URL
     private var stream: FSEventStreamRef?
-    /// One end of a move seen, the other not yet: what left the Desktop and
-    /// what landed in the Trash, by file ID, with the event's ID. The two
+    /// Each watched folder with every spelling of its path that FSEvents may
+    /// use: as resolved, and the real one (/private/var for /var).
+    private var roots: [(url: URL, spellings: [String])] = []
+    private let trashSpellings: [String]
+    /// One end of a move seen, the other not yet: what left a watched folder
+    /// and what landed in the Trash, by file ID, with the event's ID. The two
     /// ends of one move come one straight after the other.
-    private var departed: [UInt64: (url: URL, isFolder: Bool, event: UInt64, at: Date)] = [:]
-    private var arrived: [UInt64: (url: URL, event: UInt64, at: Date)] = [:]
+    private var departed: [UInt64: (path: String, isFolder: Bool, event: UInt64)] = [:]
+    private var arrived: [UInt64: (path: String, event: UInt64)] = [:]
 
-    init(folder: URL = TrashWatch.desktop) {
-        self.folder = folder.resolvingSymlinksInPath()
+    init() {
         trash = TrashWatch.userTrash.resolvingSymlinksInPath()
+        trashSpellings = TrashWatch.spellings(of: trash)
     }
 
     // The stream holds an unretained pointer to this object, so it must be
@@ -53,30 +70,103 @@ final class TrashWatch {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
     }
 
+    /// Watched when the settings file does not say.
+    static let defaultFolders = ["~/Desktop", "~/Documents", "~/Downloads"]
+
     var isRunning: Bool { stream != nil }
 
-    func start() {
-        guard stream == nil else { return }
+    /// The folders to watch, from the setting: `~` expanded, links followed,
+    /// each one once. Also what was left out and why, for the log: a path
+    /// that is not there or not a folder, one on another disk (things thrown
+    /// from there go to that disk's own Trash), the Trash or a folder that
+    /// holds it, and a folder inside another watched one, which is covered
+    /// already. Only looks at the folders themselves, never inside them.
+    static func folders(_ paths: [String]) -> (folders: [URL], skipped: [String]) {
+        let fm = FileManager.default
+        let trash = userTrash.resolvingSymlinksInPath().path
+        let volumeKey: Set<URLResourceKey> = [.volumeIdentifierKey]
+        let homeVolume = try? fm.homeDirectoryForCurrentUser.resourceValues(forKeys: volumeKey).volumeIdentifier
+        func inside(_ path: String, _ folder: String) -> Bool { path == folder || path.hasPrefix(folder + "/") }
+        func short(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }
+        var found: [URL] = []
+        var skipped: [String] = []
+        for path in paths {
+            let expanded = (path as NSString).expandingTildeInPath
+            guard expanded.hasPrefix("/") else { skipped.append("\(path) is not a full path"); continue }
+            let url = URL(fileURLWithPath: expanded, isDirectory: true).resolvingSymlinksInPath()
+            var isFolder: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isFolder) else {
+                skipped.append("\(path) is not there")
+                continue
+            }
+            guard isFolder.boolValue else { skipped.append("\(path) is not a folder"); continue }
+            guard !inside(url.path, trash), !inside(trash, url.path) else {
+                skipped.append("\(path) is or holds the Trash")
+                continue
+            }
+            let volume = try? url.resourceValues(forKeys: volumeKey).volumeIdentifier
+            if let volume, let homeVolume, !volume.isEqual(homeVolume) {
+                skipped.append("\(path) is on another disk, which has its own Trash")
+                continue
+            }
+            found.append(url)
+        }
+        var kept: [URL] = []
+        for url in found where !kept.contains(where: { $0.path == url.path }) {
+            if let outer = found.first(where: { $0.path != url.path && inside(url.path, $0.path) }) {
+                skipped.append("\(short(url.path)) is inside \(short(outer.path)), watched already")
+                continue
+            }
+            kept.append(url)
+        }
+        return (kept, skipped)
+    }
+
+    /// A path as resolved, and as the file system really spells it, which is
+    /// how FSEvents reports it.
+    private static func spellings(of url: URL) -> [String] {
+        guard let real = realpath(url.path, nil) else { return [url.path] }
+        defer { free(real) }
+        let path = String(cString: real)
+        return path == url.path ? [path] : [url.path, path]
+    }
+
+    /// Watches `folders`, and every folder inside them, and the Trash.
+    /// Already watching others, it starts over with these. False when there
+    /// is nothing to watch or FSEvents will not have it.
+    @discardableResult
+    func start(_ folders: [URL]) -> Bool {
+        if stream != nil {
+            if folders == self.folders { return true }
+            stop()
+        }
+        guard !folders.isEmpty else { return false }
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
                                            retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, count, paths, flags, ids in
             guard let info else { return }
             let watch = Unmanaged<TrashWatch>.fromOpaque(info).takeUnretainedValue()
-            let entries = unsafeBitCast(paths, to: NSArray.self) as? [[String: Any]] ?? []
-            watch.handle(entries, flags: Array(UnsafeBufferPointer(start: flags, count: count)),
+            watch.handle(unsafeBitCast(paths, to: NSArray.self),
+                         flags: Array(UnsafeBufferPointer(start: flags, count: count)),
                          ids: Array(UnsafeBufferPointer(start: ids, count: count)))
         }
         let flags = kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
             | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagUseExtendedData
-        guard let s = FSEventStreamCreate(nil, callback, &context, [folder.path, trash.path] as CFArray,
+        guard let s = FSEventStreamCreate(nil, callback, &context, (folders.map(\.path) + [trash.path]) as CFArray,
                                           FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.2,
-                                          FSEventStreamCreateFlags(flags)) else {
-            ActivityLog.shared.cat("trash rescue: could not watch the Desktop")
-            return
-        }
+                                          FSEventStreamCreateFlags(flags)) else { return false }
+        self.folders = folders
+        roots = folders.map { ($0, TrashWatch.spellings(of: $0)) }
         FSEventStreamSetDispatchQueue(s, .main)
-        FSEventStreamStart(s)
+        guard FSEventStreamStart(s) else {
+            FSEventStreamInvalidate(s)
+            FSEventStreamRelease(s)
+            self.folders = []
+            roots = []
+            return false
+        }
         stream = s
+        return true
     }
 
     func stop() {
@@ -85,64 +175,92 @@ final class TrashWatch {
         FSEventStreamInvalidate(s)
         FSEventStreamRelease(s)
         stream = nil
+        folders = []
+        roots = []
         departed = [:]
         arrived = [:]
     }
 
-    private func handle(_ entries: [[String: Any]], flags: [FSEventStreamEventFlags],
-                        ids: [FSEventStreamEventId]) {
+    private func handle(_ paths: NSArray, flags: [FSEventStreamEventFlags], ids: [FSEventStreamEventId]) {
         let renamed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed)
         let isDir = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
-        let fm = FileManager.default
-        for ((entry, flag), event) in zip(zip(entries, flags), ids) where flag & renamed != 0 {
-            guard let path = entry[kFSEventStreamEventExtendedDataPathKey] as? String,
+        // Only renames are unpacked. A code project in Documents can send
+        // thousands of other events in a second.
+        for i in flags.indices where flags[i] & renamed != 0 {
+            guard let entry = paths[i] as? NSDictionary,
+                  let path = entry[kFSEventStreamEventExtendedDataPathKey] as? String,
                   let id = (entry[kFSEventStreamEventExtendedFileIDKey] as? NSNumber)?.uint64Value else { continue }
-            let name = (path as NSString).lastPathComponent
-            guard !name.hasPrefix(".") else { continue }
-            // Resolved the same way as the watched folders, so /private/var
-            // and /var compare equal.
-            let parentURL = URL(fileURLWithPath: (path as NSString).deletingLastPathComponent).resolvingSymlinksInPath()
-            let parent = parentURL.path
-            let url = parentURL.appendingPathComponent(name)
-            // A rename event does not say which end it is. The end that still
-            // exists is where the item went; the one that does not is where
-            // it came from.
-            let exists = fm.fileExists(atPath: path)
-            if parent == folder.path, !exists {
-                departed[id] = (url, flag & isDir != 0, event, Date())
-            } else if parent == trash.path, exists {
-                arrived[id] = (url, event, Date())
+            // A rename event does not say which end it is. In the Trash, the
+            // end that still exists is where the item went. In a watched
+            // folder it is taken as where it came from, unchecked, as a look
+            // there could make macOS ask for access: a move the other way,
+            // out of the Trash, never has a Trash end that still exists.
+            if let from = watchedPath(path) {
+                departed[id] = (from, flags[i] & isDir != 0, ids[i])
+            } else if let landed = trashPath(path), FileManager.default.fileExists(atPath: path) {
+                arrived[id] = (landed, ids[i])
             }
         }
 
         var found: [TrashedItem] = []
         for (id, gone) in departed {
-            // Same item and the very next events: one move, Desktop to Trash.
+            // Same item and the very next events: one move, into the Trash.
             // Moved to another folder first and thrown away from there is two
-            // moves, far apart in the event stream, and is not ours.
+            // moves, far apart in the event stream. Moved from one watched
+            // folder to another has no Trash end at all.
             guard let landed = arrived[id],
                   max(landed.event, gone.event) - min(landed.event, gone.event) <= 3 else { continue }
-            found.append(TrashedItem(original: gone.url, inTrash: landed.url, isFolder: gone.isFolder, fileID: id))
+            found.append(TrashedItem(original: URL(fileURLWithPath: gone.path, isDirectory: gone.isFolder),
+                                     inTrash: URL(fileURLWithPath: landed.path, isDirectory: gone.isFolder),
+                                     isFolder: gone.isFolder, fileID: id))
             departed[id] = nil
             arrived[id] = nil
         }
-        // Moved somewhere else, or emptied straight away: forget it.
-        let stale = Date().addingTimeInterval(-5)
-        departed = departed.filter { $0.value.at > stale }
-        arrived = arrived.filter { $0.value.at > stale }
+        // Events come in order, so an end more than three events behind the
+        // newest can never be paired now: moved somewhere else, or emptied
+        // straight away. Forget it.
+        if let newest = ids.max() {
+            departed = departed.filter { $0.value.event + 3 >= newest }
+            arrived = arrived.filter { $0.value.event + 3 >= newest }
+        }
         if !found.isEmpty { onTrashed?(found.sorted { $0.name < $1.name }) }
+    }
+
+    /// The path spelled from the watched folder it is in, the way it will be
+    /// put back. Nil when it is in none, or is hidden or inside a hidden
+    /// folder such as `.git`, which Finder does not show.
+    private func watchedPath(_ path: String) -> String? {
+        for root in roots {
+            for spelling in root.spellings where path.hasPrefix(spelling + "/") {
+                let rest = path.dropFirst(spelling.count + 1)
+                guard !rest.hasPrefix("."), !rest.contains("/.") else { return nil }
+                return root.url.path + "/" + rest
+            }
+        }
+        return nil
+    }
+
+    /// The path when it is right in the Trash and not hidden, else nil.
+    private func trashPath(_ path: String) -> String? {
+        let name = (path as NSString).lastPathComponent
+        guard !name.hasPrefix("."), trashSpellings.contains((path as NSString).deletingLastPathComponent) else {
+            return nil
+        }
+        return trash.path + "/" + name
     }
 
     /// Moves an item back where it was. If something new has taken its name
     /// meanwhile, it comes back as "name 2", the way Finder numbers copies.
-    /// Nil when it is gone from the Trash, something else is at its Trash
-    /// path now, or the move fails.
-    static func restore(_ item: TrashedItem) -> URL? {
+    /// Throws, with the reason, when it is gone from the Trash, something
+    /// else is at its Trash path now, or the move fails. The first move into
+    /// a protected folder such as Documents may wait on the macOS prompt
+    /// for access, so the app calls this off the main thread.
+    static func restore(_ item: TrashedItem) throws -> URL {
         let fm = FileManager.default
         // Only the item that was seen going in. Put back and thrown again
         // from elsewhere, another item can land on the same Trash path.
         let id = (try? fm.attributesOfItem(atPath: item.inTrash.path)[.systemFileNumber] as? NSNumber)?.uint64Value
-        guard id == item.fileID else { return nil }
+        guard id == item.fileID else { throw RescueMiss(why: "gone from the Trash, or something else is there now") }
         let folder = item.original.deletingLastPathComponent()
         let ext = item.original.pathExtension
         let stem = item.original.deletingPathExtension().lastPathComponent
@@ -153,16 +271,41 @@ final class TrashWatch {
         var n = 2
         while fm.fileExists(atPath: target.path) {
             let name = numberWhole ? "\(item.name) \(n)" : "\(stem) \(n).\(ext)"
-            target = folder.appendingPathComponent(name)
+            target = folder.appendingPathComponent(name, isDirectory: item.isFolder)
             n += 1
         }
         do {
             try fm.moveItem(at: item.inTrash, to: target)
             return target
         } catch {
-            ActivityLog.shared.cat("trash rescue: could not put back \(item.name): \(error.localizedDescription)")
-            return nil
+            guard isNoAccess(error) else { throw RescueMiss(why: error.localizedDescription) }
+            throw RescueMiss(why: "no access to \(place(of: folder)), allow Screen Cat in System Settings > "
+                + "Privacy & Security > Files and Folders")
         }
+    }
+
+    /// macOS said no: no permission to write there.
+    private static func isNoAccess(_ error: Error) -> Bool {
+        let e = error as NSError
+        if e.domain == NSCocoaErrorDomain, [NSFileWriteNoPermissionError, NSFileReadNoPermissionError].contains(e.code) {
+            return true
+        }
+        guard let under = e.userInfo[NSUnderlyingErrorKey] as? NSError, under.domain == NSPOSIXErrorDomain else {
+            return false
+        }
+        return under.code == Int(EPERM) || under.code == Int(EACCES)
+    }
+
+    /// The folder in your home that holds `folder`, such as Documents, as
+    /// macOS names it in the privacy settings. Outside home, the folder's own
+    /// name.
+    private static func place(of folder: URL) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        guard folder.path.hasPrefix(home + "/"),
+              let top = folder.path.dropFirst(home.count + 1).split(separator: "/").first else {
+            return folder.lastPathComponent
+        }
+        return String(top)
     }
 }
 
@@ -189,8 +332,7 @@ enum DockTrash {
     static func x(on screen: NSScreen) -> CGFloat {
         let dock = UserDefaults(suiteName: "com.apple.dock")
         let orientation = dock?.string(forKey: "orientation") ?? "bottom"
-        let size = CGFloat(dock?.double(forKey: "tilesize") ?? 0)
-        let tile = size > 0 ? size : 48
+        let tile = tileSize(dock)
         let frame = screen.frame
         let visible = screen.visibleFrame
         switch orientation {
@@ -201,12 +343,44 @@ enum DockTrash {
         case "right":
             return visible.maxX - tile * 0.6
         default:
-            let count = CGFloat(iconCount(dock))
-            let separators: CGFloat = showsRecents(dock) ? 2 : 1
-            let width = count * tile + separators * tile * 0.35 + tile * 0.3
-            let trash = frame.midX + width / 2 - tile * 0.15 - tile / 2
+            let trash = frame.midX + length(dock, tile: tile) / 2 - tile * 0.15 - tile / 2
             return min(max(trash, visible.minX + tile), visible.maxX - tile * 0.5)
         }
+    }
+
+    /// Where Finder sits in the Dock, at the other end from the Trash, as a
+    /// global point. Things thrown from a folder other than the Desktop are
+    /// tossed back there. Like the Trash spot, only close.
+    static func finder(on screen: NSScreen) -> CGPoint {
+        let dock = UserDefaults(suiteName: "com.apple.dock")
+        let orientation = dock?.string(forKey: "orientation") ?? "bottom"
+        let tile = tileSize(dock)
+        let frame = screen.frame
+        let visible = screen.visibleFrame
+        switch orientation {
+        case "left", "right":
+            // A side Dock starts with Finder at its top.
+            let x = orientation == "left" ? (frame.minX + visible.minX) / 2 : (visible.maxX + frame.maxX) / 2
+            let top = frame.midY + length(dock, tile: tile) / 2 - tile * 0.65
+            return CGPoint(x: x, y: min(top, visible.maxY - tile / 2))
+        default:
+            let x = frame.midX - length(dock, tile: tile) / 2 + tile * 0.15 + tile / 2
+            return CGPoint(x: min(max(x, visible.minX + tile * 0.5), visible.maxX - tile), y: visible.minY)
+        }
+    }
+
+    /// The Dock's icon size, in points.
+    private static func tileSize(_ dock: UserDefaults?) -> CGFloat {
+        let size = CGFloat(dock?.double(forKey: "tilesize") ?? 0)
+        return size > 0 ? size : 48
+    }
+
+    /// How long the Dock is from end to end: every icon, the separators and
+    /// a little padding.
+    private static func length(_ dock: UserDefaults?, tile: CGFloat) -> CGFloat {
+        let count = CGFloat(iconCount(dock))
+        let separators: CGFloat = showsRecents(dock) ? 2 : 1
+        return count * tile + separators * tile * 0.35 + tile * 0.3
     }
 
     private static func showsRecents(_ dock: UserDefaults?) -> Bool {
@@ -237,7 +411,8 @@ enum DockTrash {
 // MARK: - The rescue
 
 /// The cat runs to the Trash, digs out what you just threw away, carries it
-/// back out, and tosses it up to the Desktop, where it really appears again.
+/// back out, and tosses it home, where it really appears again: up to the
+/// Desktop icons, or to Finder in the Dock for things from other folders.
 /// Level the whole way: in from the side, along the floor, out the side.
 final class RescueBehavior: Behavior {
     private enum Stage { case arriving, digging, carrying, tossing, proud, leaving }
@@ -321,7 +496,15 @@ final class RescueBehavior: Behavior {
                 timer = 0
                 tossFrom = held(cat, scene.sheet).pos
                 // Desktop icons line up from the top right by default.
-                tossTo = CGPoint(x: rect.maxX - cat.size * 1.6, y: rect.maxY - cat.size * 1.8)
+                // Anything else goes to Finder, which holds the other
+                // folders. The first thing on its back decides.
+                if items.first?.wasOnDesktop ?? true {
+                    tossTo = CGPoint(x: rect.maxX - cat.size * 1.6, y: rect.maxY - cat.size * 1.8)
+                } else {
+                    let finder = scene.finderSpot
+                    tossTo = CGPoint(x: min(max(finder.x, rect.minX + cat.size * 0.5), rect.maxX - cat.size * 0.5),
+                                     y: min(max(finder.y, rect.minY), rect.maxY - cat.size))
+                }
             }
 
         case .tossing:
@@ -478,31 +661,49 @@ func drawCarriedItem(_ item: CarriedItem, palette: Palette, in ctx: CGContext) {
 
 // MARK: - Self-test
 
-/// Throws scratch things away (a file, a folder, and a name the Trash
-/// already holds), checks the watcher reports each one, puts them back, and
-/// checks they are where they started. Cleans up after itself. Exits with 0
-/// when every case passes.
-func runRescueSelfTest(onDesktop: Bool) -> Never {
+/// Throws scratch things away (a file, a folder, a name the Trash already
+/// holds, one from a folder inside a watched one, and more), checks the
+/// watcher reports each one, puts them back, and checks they are where they
+/// started. With `realFolders` it also throws from the real Documents and
+/// Downloads. macOS protects those, so run that only from a shell that has
+/// access, or macOS asks. Cleans up after itself, in every folder and in
+/// the Trash. Exits with 0 when every case passes.
+func runRescueSelfTest(onDesktop: Bool, realFolders: Bool) -> Never {
     let fm = FileManager.default
-    let folder = onDesktop ? TrashWatch.desktop
-        : fm.temporaryDirectory.appendingPathComponent("ScreenCatRescueTest", isDirectory: true)
-    try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+    let scratch = fm.temporaryDirectory.appendingPathComponent("ScreenCatRescueTest", isDirectory: true)
+    /// A second watched folder, for a move from one watched folder to another.
+    let other = fm.temporaryDirectory.appendingPathComponent("ScreenCatRescueTest2", isDirectory: true)
+    let folder = onDesktop ? TrashWatch.desktop : scratch
+    for url in [scratch, other] { try? fm.createDirectory(at: url, withIntermediateDirectories: true) }
     let stamp = Int(Date().timeIntervalSince1970)
-    let watch = TrashWatch(folder: folder)
+    let tag = "screencat-rescue-test-\(stamp)"
+    let watch = TrashWatch()
     var seen: [TrashedItem] = []
-    watch.onTrashed = { seen += $0 }
-    watch.start()
+    // Only our own scratch things. Something you throw away meanwhile is not
+    // part of the test.
+    watch.onTrashed = { seen += $0.filter { $0.name.hasPrefix(tag) } }
     /// Our own scratch things still in the Trash, to take back out and delete.
     var leftovers: [(trashed: URL, home: URL)] = []
     var made: [URL] = []
+    /// Folders made read-only, to open up again before deleting.
+    var locked: [URL] = []
 
     func cleanUp() {
-        for (trashed, home) in leftovers where fm.fileExists(atPath: trashed.path) {
-            if !fm.fileExists(atPath: home.path) { try? fm.moveItem(at: trashed, to: home) }
-            made.append(home)
+        for url in locked { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path) }
+        // Out of the Trash by a move, which needs no Full Disk Access, then
+        // deleted. Somewhere else in the scratch folder if home is taken.
+        for (i, leftover) in leftovers.enumerated() where fm.fileExists(atPath: leftover.trashed.path) {
+            for out in [leftover.home, scratch.appendingPathComponent("leftover-\(i)")]
+            where !fm.fileExists(atPath: out.path) {
+                if (try? fm.moveItem(at: leftover.trashed, to: out)) != nil { made.append(out); break }
+            }
         }
-        for url in made { try? fm.removeItem(at: url) }
-        if !onDesktop { try? fm.removeItem(at: folder) }
+        // Newest first, so things go before the folders they are in.
+        for url in made.reversed() { try? fm.removeItem(at: url) }
+        for url in [scratch, other] { try? fm.removeItem(at: url) }
+        for leftover in leftovers where fm.fileExists(atPath: leftover.trashed.path) {
+            print("  still in the Trash: \(leftover.trashed.path)")
+        }
     }
     func fail(_ why: String) -> Never {
         print("FAIL: \(why)")
@@ -527,6 +728,7 @@ func runRescueSelfTest(onDesktop: Bool) -> Never {
     }
     /// Trashes `url` and returns what the watcher reported for it.
     func throwAway(_ url: URL) -> TrashedItem {
+        let expected = url.resolvingSymlinksInPath().path
         seen = []
         var landed: NSURL?
         do { try fm.trashItem(at: url, resultingItemURL: &landed) } catch { fail("could not trash: \(error)") }
@@ -534,8 +736,8 @@ func runRescueSelfTest(onDesktop: Bool) -> Never {
         leftovers.append((landed, url))
         wait(3) { !seen.isEmpty }
         guard let item = seen.first else { fail("watcher saw nothing for \(url.lastPathComponent)") }
-        guard item.original.path == url.resolvingSymlinksInPath().path else {
-            fail("wrong original path \(item.original.path)")
+        guard item.original.path == expected else {
+            fail("wrong original path \(item.original.path), expected \(expected)")
         }
         guard item.inTrash.lastPathComponent == landed.lastPathComponent else {
             fail("wrong Trash path \(item.inTrash.path), expected \(landed.path)")
@@ -544,16 +746,36 @@ func runRescueSelfTest(onDesktop: Bool) -> Never {
         return item
     }
     func putBack(_ item: TrashedItem, expect url: URL) {
-        guard let back = TrashWatch.restore(item) else { fail("restore of \(item.name) failed") }
+        let back: URL
+        do { back = try TrashWatch.restore(item) } catch {
+            fail("restore of \(item.name) failed: \((error as? RescueMiss)?.why ?? "\(error)")")
+        }
         guard back.path == url.resolvingSymlinksInPath().path, fm.fileExists(atPath: url.path) else {
             fail("\(item.name) came back at \(back.path)")
         }
         leftovers.removeAll { $0.trashed.lastPathComponent == item.inTrash.lastPathComponent }
-        print("  put back at \(back.lastPathComponent)")
+        print("  put back at \(back.path.replacingOccurrences(of: folder.path + "/", with: ""))")
     }
 
+    print("folders that cannot be watched:")
+    let sub = folder.appendingPathComponent("\(tag) sub", isDirectory: true)
+    make(sub, folder: true)
+    let plain = scratch.appendingPathComponent("\(tag)-not-a-folder.txt")
+    make(plain, folder: false)
+    let bad = [scratch.appendingPathComponent("\(tag)-not-there").path, plain.path, "~/.Trash", sub.path,
+               "relative/folder"]
+    let wanted = [folder.path, other.path] + (realFolders ? TrashWatch.defaultFolders : [])
+    let watched = TrashWatch.folders(wanted + bad)
+    for line in watched.skipped { print("  skipped \(line)") }
+    guard watched.skipped.count == bad.count else { fail("skipped \(watched.skipped.count) of \(bad.count)") }
+    guard watched.folders.count == (realFolders ? (onDesktop ? 4 : 5) : 2) else {
+        fail("watching \(watched.folders.map(\.path))")
+    }
+    guard watch.start(watched.folders) else { fail("could not start watching") }
+    print("  watching \(watched.folders.count) folders")
+
     print("file:")
-    let file = folder.appendingPathComponent("screencat-rescue-test-\(stamp).txt")
+    let file = folder.appendingPathComponent("\(tag).txt")
     make(file, folder: false)
     let fileItem = throwAway(file)
     guard !fileItem.isFolder else { fail("a file was reported as a folder") }
@@ -565,7 +787,7 @@ func runRescueSelfTest(onDesktop: Bool) -> Never {
     guard seen.isEmpty else { fail("putting back was reported as a new throw") }
 
     print("folder:")
-    let box = folder.appendingPathComponent("screencat-rescue-test-\(stamp) folder")
+    let box = folder.appendingPathComponent("\(tag) folder")
     make(box, folder: true)
     let boxItem = throwAway(box)
     guard boxItem.isFolder else { fail("a folder was reported as a file") }
@@ -573,7 +795,7 @@ func runRescueSelfTest(onDesktop: Bool) -> Never {
     guard fm.fileExists(atPath: box.appendingPathComponent("note.txt").path) else { fail("folder came back empty") }
 
     print("same name already in the Trash:")
-    let twin = folder.appendingPathComponent("screencat-rescue-test-\(stamp)-twin.txt")
+    let twin = folder.appendingPathComponent("\(tag)-twin.txt")
     make(twin, folder: false)
     let first = throwAway(twin)
     make(twin, folder: false)
@@ -581,27 +803,26 @@ func runRescueSelfTest(onDesktop: Bool) -> Never {
     guard first.inTrash != second.inTrash else { fail("both throws reported the same Trash path") }
     putBack(second, expect: twin)
     // The first one is ours too; it comes back under the next free name.
-    guard let firstBack = TrashWatch.restore(first) else { fail("restore of the first twin failed") }
+    guard let firstBack = try? TrashWatch.restore(first) else { fail("restore of the first twin failed") }
     made.append(firstBack)
     leftovers.removeAll { $0.trashed.lastPathComponent == first.inTrash.lastPathComponent }
-    guard firstBack.lastPathComponent == "screencat-rescue-test-\(stamp)-twin 2.txt" else {
+    guard firstBack.lastPathComponent == "\(tag)-twin 2.txt" else {
         fail("taken name came back as \(firstBack.lastPathComponent)")
     }
     print("  name taken, so the first came back as \(firstBack.lastPathComponent)")
 
     print("something else at the Trash path:")
-    let swap = folder.appendingPathComponent("screencat-rescue-test-\(stamp)-swap.txt")
+    let swap = folder.appendingPathComponent("\(tag)-swap.txt")
     make(swap, folder: false)
     let swapped = throwAway(swap)
     let impostor = TrashedItem(original: swapped.original, inTrash: swapped.inTrash,
                                isFolder: false, fileID: swapped.fileID &+ 1)
-    guard TrashWatch.restore(impostor) == nil else { fail("restored an item with another file ID") }
+    guard (try? TrashWatch.restore(impostor)) == nil else { fail("restored an item with another file ID") }
     print("  refused an item with another file ID")
     putBack(swapped, expect: swap)
 
     print("several at once:")
-    let pair = [folder.appendingPathComponent("screencat-rescue-test-\(stamp)-a.txt"),
-                folder.appendingPathComponent("screencat-rescue-test-\(stamp)-b.txt")]
+    let pair = [folder.appendingPathComponent("\(tag)-a.txt"), folder.appendingPathComponent("\(tag)-b.txt")]
     for url in pair { make(url, folder: false) }
     seen = []
     for url in pair {
@@ -621,22 +842,94 @@ func runRescueSelfTest(onDesktop: Bool) -> Never {
     print("moved to another folder, then thrown away from there:")
     let elsewhere = fm.temporaryDirectory.appendingPathComponent("ScreenCatRescueElsewhere-\(stamp)", isDirectory: true)
     try? fm.createDirectory(at: elsewhere, withIntermediateDirectories: true)
-    let wanderer = folder.appendingPathComponent("screencat-rescue-test-\(stamp)-moved.txt")
+    let wanderer = folder.appendingPathComponent("\(tag)-moved.txt")
     make(wanderer, folder: false)
     let moved = elsewhere.appendingPathComponent(wanderer.lastPathComponent)
     do { try fm.moveItem(at: wanderer, to: moved) } catch { fail("could not move: \(error)") }
-    made.append(moved)
     made.append(elsewhere)
+    made.append(moved)
     wait(0.8) { false }
     seen = []
     var movedLanded: NSURL?
     do { try fm.trashItem(at: moved, resultingItemURL: &movedLanded) } catch { fail("could not trash: \(error)") }
     if let landed = movedLanded as URL? { leftovers.append((landed, moved)) }
     wait(2) { !seen.isEmpty }
-    guard seen.isEmpty else { fail("a move to another folder was taken for a throw from the Desktop") }
+    guard seen.isEmpty else { fail("a move to another folder was taken for a throw from a watched one") }
     print("  not reported")
 
+    print("from a folder inside a watched one:")
+    let deeper = sub.appendingPathComponent("deeper", isDirectory: true)
+    make(deeper, folder: true)
+    let nested = deeper.appendingPathComponent("\(tag)-nested.txt")
+    make(nested, folder: false)
+    putBack(throwAway(nested), expect: nested)
+    guard (try? String(contentsOf: nested, encoding: .utf8)) == "rescue me" else {
+        fail("nested file came back changed")
+    }
+
+    print("from one watched folder to another:")
+    let traveller = folder.appendingPathComponent("\(tag)-travel.txt")
+    make(traveller, folder: false)
+    let travelled = other.appendingPathComponent(traveller.lastPathComponent)
+    seen = []
+    do { try fm.moveItem(at: traveller, to: travelled) } catch { fail("could not move: \(error)") }
+    made.append(travelled)
+    wait(1.5) { !seen.isEmpty }
+    guard seen.isEmpty else { fail("a move between watched folders was taken for a throw") }
+    print("  not reported")
+    putBack(throwAway(travelled), expect: travelled)
+
+    print("no access to where it goes back:")
+    let shutIn = folder.appendingPathComponent("\(tag) locked", isDirectory: true)
+    make(shutIn, folder: true)
+    let shut = shutIn.appendingPathComponent("\(tag)-shut.txt")
+    make(shut, folder: false)
+    let shutItem = throwAway(shut)
+    locked.append(shutIn)
+    try? fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: shutIn.path)
+    do {
+        _ = try TrashWatch.restore(shutItem)
+        fail("put back into a folder it may not write to")
+    } catch let miss as RescueMiss {
+        guard miss.why.hasPrefix("no access") else { fail("wrong reason: \(miss.why)") }
+        print("  left in the Trash: \(miss.why)")
+    } catch { fail("wrong error: \(error)") }
+    guard fm.fileExists(atPath: shutItem.inTrash.path) else { fail("it is not in the Trash any more") }
+    try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shutIn.path)
+    putBack(shutItem, expect: shut)
+
+    if realFolders {
+        let home = fm.homeDirectoryForCurrentUser
+        for name in ["Documents", "Downloads"] {
+            let place = home.appendingPathComponent(name, isDirectory: true)
+            print("\(name):")
+            let top = place.appendingPathComponent("\(tag).txt")
+            make(top, folder: false)
+            putBack(throwAway(top), expect: top)
+            print("\(name), from a folder inside it:")
+            let inner = place.appendingPathComponent("\(tag) sub", isDirectory: true)
+            make(inner, folder: true)
+            let innerFile = inner.appendingPathComponent("\(tag)-inner.txt")
+            make(innerFile, folder: false)
+            putBack(throwAway(innerFile), expect: innerFile)
+        }
+        print("Documents to the Desktop:")
+        let mover = home.appendingPathComponent("Documents/\(tag)-to-desktop.txt")
+        make(mover, folder: false)
+        let onDesk = TrashWatch.desktop.appendingPathComponent(mover.lastPathComponent)
+        seen = []
+        do { try fm.moveItem(at: mover, to: onDesk) } catch { fail("could not move: \(error)") }
+        made.append(onDesk)
+        wait(1.5) { !seen.isEmpty }
+        guard seen.isEmpty else { fail("a move from Documents to the Desktop was taken for a throw") }
+        print("  not reported")
+        let deskItem = throwAway(onDesk)
+        guard deskItem.wasOnDesktop else { fail("not seen as on the Desktop") }
+        putBack(deskItem, expect: onDesk)
+    }
+
     cleanUp()
+    for url in made where fm.fileExists(atPath: url.path) { fail("left behind \(url.path)") }
     print("PASS")
     exit(0)
 }
