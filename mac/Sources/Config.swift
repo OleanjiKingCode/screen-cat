@@ -120,6 +120,13 @@ struct Config {
     /// Stepped out: keep the Mac awake and the screen on until you turn it
     /// off. Works with any mode.
     var steppedOut = false
+    /// Throw something from a watched folder in the Trash and the cat digs it
+    /// out and puts it back. Throw the same thing away again within ten
+    /// minutes and it lets it go.
+    var trashRescue = true
+    /// The folders the trash rescue watches, with every folder inside them.
+    /// `~` is your home folder.
+    var trashRescueFolders: [String] = TrashWatch.defaultFolders
 
     // LLM mode ----------------------------------------------------------------
     /// Answer what you copy, and screenshots you take, with Claude. Runs the
@@ -233,6 +240,8 @@ struct Config {
         c.zeroDaySound          = bool("zeroDaySound")         ?? c.zeroDaySound
         c.zeroDayVolume         = num("zeroDayVolume")         ?? c.zeroDayVolume
         c.steppedOut            = bool("steppedOut")           ?? c.steppedOut
+        c.trashRescue           = bool("trashRescue")          ?? c.trashRescue
+        c.trashRescueFolders    = strs("trashRescueFolders")    ?? c.trashRescueFolders
         c.llmMode               = bool("llmMode")              ?? c.llmMode
         c.llmFromClipboard      = bool("llmFromClipboard")     ?? c.llmFromClipboard
         c.llmFromScreenshots    = bool("llmFromScreenshots")   ?? c.llmFromScreenshots
@@ -349,6 +358,8 @@ struct Config {
             "zeroDaySound": d.zeroDaySound,
             "zeroDayVolume": d.zeroDayVolume,
             "steppedOut": d.steppedOut,
+            "trashRescue": d.trashRescue,
+            "trashRescueFolders": d.trashRescueFolders,
             "llmMode": d.llmMode,
             "llmFromClipboard": d.llmFromClipboard,
             "llmFromScreenshots": d.llmFromScreenshots,

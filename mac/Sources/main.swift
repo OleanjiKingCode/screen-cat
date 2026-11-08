@@ -68,6 +68,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The pet's silhouette, shown in the menu bar.
     private var menuIcon: NSImage?
 
+    // Trash rescue: things thrown from the watched folders to the Trash get
+    // dug out.
+    private let trashWatch = TrashWatch()
+    /// Puts things back off the main thread. The first move into a protected
+    /// folder such as Documents waits on the macOS prompt for access, and
+    /// the pet must not freeze meanwhile.
+    private let restoreQueue = DispatchQueue(label: "screencat.trash-rescue", qos: .utility)
+    /// When each thing was last put back, by path and by file ID (see
+    /// `rescueKeys`). Thrown away again soon after, the cat lets it go: you
+    /// meant it.
+    private var rescuedAt: [String: Date] = [:]
+
     /// `--selftest <png>`: run the real on-screen window, force a walk, then
     /// photograph our own window to prove what actually reached the screen.
     private func runSelfTest(to path: String) {
@@ -193,6 +205,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return answer.contains(text)
         }
         applyLLMMode()
+        trashWatch.onTrashed = { [weak self] items in self?.trashed(items) }
+        applyTrashRescue()
         if firstRun { showWelcome() }
         schedule(after: demo ? 2 : scene.config.firstAppearanceDelay)
     }
@@ -244,6 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         view.sheet = sheet
+        scene.sheet = sheet
         scene.cat.isDog = c.pet == "dog"
         loadedPaletteKey = key
         menuIcon = sheet.menuBarIcon()
@@ -255,6 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyConfig()
         applySteppedOut()
         applyLLMMode()
+        applyTrashRescue()
         loadSprites()
         view.needsDisplay = true
     }
@@ -330,6 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(now, "Chase a ball", #selector(runBall))
         add(now, "Beg for food", #selector(runHungry))
         add(now, "Ask to play", #selector(runPlay))
+        add(now, "Dig something out of the Trash", #selector(runRescue))
         now.addItem(.separator())
         add(now, "Break some apps", #selector(runCrawl))
         add(now, "Crawl until I touch something", #selector(runIdleCrawl))
@@ -348,6 +365,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         add(menu, "Stepped out (Mac never sleeps)", #selector(toggleSteppedOut), tag: 600)
+        add(menu, "Rescue things I trash", #selector(toggleTrashRescue), tag: 900)
         add(menu, "Show in screenshots & recordings", #selector(toggleCapture), tag: 300)
         add(menu, "Open at login", #selector(toggleLogin), tag: 400)
         menu.addItem(.separator())
@@ -390,6 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tick(300, !c.hideFromCapture)
         tick(400, LoginItem.isEnabled)
         tick(600, StayAwake.isOn)
+        tick(900, c.trashRescue)
         tick(701, c.llmCopyAnswer)
         tick(702, c.llmShowAnswer)
         tick(500, c.mode != "crawler")
@@ -428,6 +447,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func runHungry() { start(.hungry, force: true) }
     @objc private func runPlay()   { start(.play, force: true) }
     @objc private func runCrawl()  { start(.crawl, force: true) }
+    /// A show of the rescue with nothing real on the cat's back.
+    @objc private func runRescue() { startRescue([], fromMenu: true) }
     @objc private func runIdleCrawl() { beginIdleCrawl(grace: 1.0) }
 
     // MARK: - Idle crawl
@@ -662,6 +683,147 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshStatusTitle()
         guard wasOn != StayAwake.isOn else { return }
         ActivityLog.shared.cat(StayAwake.isOn ? "stepped out: Mac stays awake" : "stepped out off: Mac may sleep")
+    }
+
+    // MARK: - Trash rescue
+
+    /// Ticked, the pet digs things thrown from the watched folders out of the
+    /// Trash. Saved to settings.
+    @objc private func toggleTrashRescue(_ sender: NSMenuItem) {
+        scene.config.trashRescue.toggle()
+        Config.update("trashRescue", to: scene.config.trashRescue)
+        applyTrashRescue()
+        sender.state = scene.config.trashRescue ? .on : .off
+    }
+
+    /// Watches the folders in `trashRescueFolders` and the Trash only while
+    /// the setting is on. A changed list starts the watch over. A folder that
+    /// is not there or cannot be watched is left out, and the log says so.
+    private func applyTrashRescue() {
+        guard scene.config.trashRescue else {
+            if trashWatch.isRunning { ActivityLog.shared.cat("trash rescue off") }
+            trashWatch.stop()
+            // Off means off: a rescue on its way does not put anything back.
+            if let rescue = behavior as? RescueBehavior, !rescue.restored {
+                stopBehavior()
+                if !paused && !away { scheduleNext() }
+            }
+            return
+        }
+        let wanted = TrashWatch.folders(scene.config.trashRescueFolders)
+        for line in wanted.skipped { ActivityLog.shared.cat("trash rescue: left out \(line)") }
+        if trashWatch.isRunning && trashWatch.folders == wanted.folders { return }
+        // Asked once now, off the main thread, so macOS shows its prompt for
+        // each protected folder at start rather than on the first throw, and
+        // file events from it reach the pet. A put-back waits behind this on
+        // the same queue. A folder you say no to stays watched; the log says
+        // why its things will stay in the Trash.
+        let folders = wanted.folders
+        restoreQueue.async {
+            let refused = folders.filter { (try? FileManager.default.contentsOfDirectory(atPath: $0.path)) == nil }
+            DispatchQueue.main.async {
+                for folder in refused { ActivityLog.shared.cat("trash rescue: \(TrashWatch.noAccess(folder))") }
+            }
+        }
+        let names = wanted.folders.map { ($0.path as NSString).abbreviatingWithTildeInPath }.joined(separator: ", ")
+        if trashWatch.start(wanted.folders) {
+            ActivityLog.shared.cat("trash rescue on, watching \(names)")
+        } else {
+            ActivityLog.shared.cat(wanted.folders.isEmpty ? "trash rescue: no folder to watch"
+                                   : "trash rescue: could not watch \(names)")
+        }
+    }
+
+    /// Keys for "put back a moment ago": the path it was at, and the item
+    /// itself by file ID, so renaming it does not get it rescued twice.
+    /// `putBack` also adds the path it came back to, if that is new.
+    private func rescueKeys(_ item: TrashedItem) -> [String] {
+        [item.original.path, "#\(item.fileID)"]
+    }
+
+    /// Something left a watched folder for the Trash. The cat goes after it
+    /// unless it is busy with something you asked for, keeping out of the
+    /// way, or already put this one back a moment ago.
+    private func trashed(_ items: [TrashedItem]) {
+        let now = Date()
+        rescuedAt = rescuedAt.filter { now.timeIntervalSince($0.value) < 600 }
+        let thrownTwice = { (item: TrashedItem) in self.rescueKeys(item).contains { self.rescuedAt[$0] != nil } }
+        for item in items where thrownTwice(item) {
+            ActivityLog.shared.cat("trash rescue: let \(item.name) go, it was thrown away twice")
+        }
+        let wanted = items.filter { !thrownTwice($0) }
+        guard !wanted.isEmpty else { return }
+        let names = wanted.map(\.name).joined(separator: ", ")
+        // Only what you throw away in Finder, by dragging or with Cmd+Delete.
+        // An editor or a script moving files to the Trash, such as VS Code
+        // deleting a file in a project, means it.
+        let front = NSWorkspace.shared.frontmostApplication
+        guard front?.bundleIdentifier == "com.apple.finder" else {
+            ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (thrown from \(front?.localizedName ?? "an app"), not Finder)")
+            return
+        }
+        guard !paused, !away else {
+            ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (\(paused ? "paused" : "away"))")
+            return
+        }
+        // A real rescue still on its way in takes more. The menu's show is
+        // forced past the film check, so it does not.
+        if !forced, let rescue = behavior as? RescueBehavior, rescue.add(wanted) {
+            ActivityLog.shared.cat("trash rescue: also going after \(names)")
+            return
+        }
+        // Never over an answer card, a game you said yes to, the idle crawl,
+        // or a rescue already on its way out. A play invite not yet
+        // answered gives way.
+        let playing = (behavior as? PlayBehavior)?.accepted == true
+        if behavior is AskBehavior || playing || behavior is IdleCrawlBehavior || behavior is RescueBehavior {
+            ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (cat busy)")
+            return
+        }
+        if let why = Watching.reason(scene.config, screen: DockTrash.screen()) {
+            ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (\(why))")
+            return
+        }
+        startRescue(wanted)
+    }
+
+    /// Only a menu pick is forced. A real rescue keeps the usual watch, so a
+    /// film coming to the front sends the cat home, and the item stays in
+    /// the Trash.
+    private func startRescue(_ items: [TrashedItem], fromMenu: Bool = false) {
+        scene.rescueItems = items
+        start(.rescue, force: fromMenu, on: DockTrash.screen())
+        guard let rescue = behavior as? RescueBehavior else { return }
+        if !items.isEmpty {
+            ActivityLog.shared.cat("trash rescue: going after \(items.map(\.name).joined(separator: ", "))")
+        }
+        rescue.onRestore = { [weak self] items in self?.putBack(items) }
+    }
+
+    /// Moves the items back on `restoreQueue`, then logs each one here. A
+    /// folder goes back before anything that was inside it.
+    private func putBack(_ items: [TrashedItem]) {
+        let now = Date()
+        for item in items {
+            for key in rescueKeys(item) { rescuedAt[key] = now }
+        }
+        let ordered = items.sorted { $0.original.pathComponents.count < $1.original.pathComponents.count }
+        restoreQueue.async {
+            let results = ordered.map { item in Result { try TrashWatch.restore(item) } }
+            DispatchQueue.main.async { [weak self] in
+                for (item, result) in zip(ordered, results) {
+                    switch result {
+                    case .success(let back):
+                        // It may have come back under a new name; that one counts too.
+                        self?.rescuedAt[back.path] = now
+                        ActivityLog.shared.cat("trash rescue: put \(item.name) back as \(back.lastPathComponent)")
+                    case .failure(let error):
+                        let why = (error as? RescueMiss)?.why ?? error.localizedDescription
+                        ActivityLog.shared.cat("trash rescue: \(item.name) stays in the Trash (\(why))")
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - LLM mode
@@ -952,7 +1114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         start(.stroll)
     }
 
-    private func start(_ requested: Routine, force: Bool = false) {
+    private func start(_ requested: Routine, force: Bool = false, on chosen: NSScreen? = nil) {
         var routine = requested
         // One cat at a time: whatever is out now leaves before the next arrives.
         stopBehavior()
@@ -968,7 +1130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyConfig()
         loadSprites()
 
-        let screen = targetScreen()
+        let screen = chosen ?? targetScreen()
         currentScreen = screen
         // visibleFrame, not frame: the overlay sits below the Dock and the menu
         // bar, so a cat that walked there would be half-hidden.
@@ -977,11 +1139,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Begging and the play invite both face you and need a clickable
         // bubble the right way up, so they stay on the bottom edge.
         let mayUseWall = routine != .hungry && routine != .play && routine != .crawl && routine != .ask
-            && routine != .idleCrawl && routine != .zeroDay
+            && routine != .idleCrawl && routine != .zeroDay && routine != .rescue
             && Double.random(in: 0..<1) < scene.config.wallChance
         let surface: Surface = mayUseWall ? (Bool.random() ? .left : .right) : .bottom
         scene.setStage(surface: surface, screen: screen.visibleFrame, catSize: scene.cat.size)
         if routine == .idleCrawl || routine == .zeroDay { scene.crawlTargets = crawlTargets(on: screen) }
+        // The rescue digs at the Trash, so it needs the Dock's spot on the floor,
+        // and it tosses things from other folders than the Desktop to Finder.
+        if routine == .rescue {
+            let visible = screen.visibleFrame
+            scene.trashX = DockTrash.x(on: screen) - visible.minX
+            let finder = DockTrash.finder(on: screen)
+            scene.finderSpot = CGPoint(x: finder.x - visible.minX, y: finder.y - visible.minY)
+        }
         if routine == .crawl {
             scene.crawlTargets = crawlTargets(on: screen)
             // Nothing to break on this screen: just take a walk.
@@ -1048,6 +1218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view?.breaches = []
         view?.zap = nil
         view?.aura = nil
+        view?.carried = nil
         takeover?.clear()
         // The card goes with the cat, whatever sent the cat away. An answer
         // with no card is not the cat's, so a new routine leaves it running.
@@ -1126,10 +1297,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.breaches = crawl?.breaches ?? []
         view.zap = crawl?.zap
         view.aura = crawl?.aura
+        view.carried = (behavior as? RescueBehavior)?.carried
         var dirty = scene.cat.bounds
         for breach in view.breaches { dirty = dirty.union(breach.rect.insetBy(dx: -6, dy: -6)) }
         if let zap = view.zap { dirty = dirty.union(zap.bounds) }
         if let aura = view.aura { dirty = dirty.union(aura.bounds) }
+        if let carried = view.carried { dirty = dirty.union(carried.bounds) }
         if let idle = behavior as? IdleCrawlBehavior { showTakeover(idle) }
         if scene.ball.visible { dirty = dirty.union(scene.ball.bounds) }
         if let tip = view.bubbleTip {
@@ -1171,8 +1344,10 @@ extension AppDelegate {
             }
             return petLeft > 0
         }
-        // The play invite has its own dwell on the same pointer.
-        guard scene.config.petSeconds > 0, cat.visible, !(behavior is PlayBehavior) else {
+        // The play invite has its own dwell on the same pointer. A rescue is
+        // busy, and a pet would leave what it carries hanging in the air.
+        guard scene.config.petSeconds > 0, cat.visible, !(behavior is PlayBehavior),
+              !(behavior is RescueBehavior) else {
             petDwell = 0
             return false
         }
@@ -1350,6 +1525,15 @@ if CommandLine.arguments.count >= 3, ["--ask", "--ask-image"].contains(CommandLi
     }
     while !finished { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
     exit(0)
+}
+
+// `--rescue-selftest [desktop] [folders]` throws scratch files in the Trash,
+// checks the watcher sees them and that putting them back works, then
+// deletes them. It uses a scratch folder unless `desktop` is given.
+// `folders` also throws from the real Documents and Downloads.
+if CommandLine.arguments.contains("--rescue-selftest") {
+    runRescueSelfTest(onDesktop: CommandLine.arguments.contains("desktop"),
+                      realFolders: CommandLine.arguments.contains("folders"))
 }
 
 // Only one Screen Cat may run at a time, or you get two cats.

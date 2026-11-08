@@ -15,6 +15,15 @@ final class Scene {
     var config = Config()
     /// Windows for crawler mode to break, in surface-local coordinates.
     var crawlTargets: [CGRect] = []
+    /// What the trash rescue goes after, and where the Trash is, as a
+    /// surface-local x on the floor.
+    var rescueItems: [TrashedItem] = []
+    var trashX: CGFloat = 0
+    /// Where Finder sits in the Dock, surface-local. Things thrown from a
+    /// folder other than the Desktop are tossed back there.
+    var finderSpot: CGPoint = .zero
+    /// The loaded sprites, for routines that need to know where the body is.
+    var sheet: SpriteSheet?
 
     /// Lay out the local walking space for a surface on a screen.
     func setStage(surface: Surface, screen: CGRect, catSize: CGFloat) {
@@ -737,6 +746,8 @@ enum Routine: String, CaseIterable {
     case zeroDay = "zeroday"
     /// LLM mode: sits under the answer to what you copied.
     case ask
+    /// Digs what you just threw away out of the Trash and puts it back.
+    case rescue
 }
 
 func makeBehavior(_ routine: Routine, scene: Scene) -> Behavior {
@@ -756,6 +767,9 @@ func makeBehavior(_ routine: Routine, scene: Scene) -> Behavior {
 
     case .ask:
         return AskBehavior(scene: scene)
+
+    case .rescue:
+        return RescueBehavior(scene: scene, items: scene.rescueItems, trashX: scene.trashX)
 
     case .crawl:
         return CrawlBehavior(scene: scene, targets: scene.crawlTargets)
