@@ -29,6 +29,8 @@ func renderAnswerCards(to path: String) {
     let question = "A train leaves at 3:40 pm and the trip takes 2 h 35 min. What time does it arrive?"
     panel.showThinking(.text(question), above: CGPoint(x: 1000, y: 120), within: screen)
     snap("Thinking")
+    panel.showPartial("It arrives at 6:15 pm.\n3:40 pm + 2 h = 5:40")
+    snap("Writing, part of the answer in")
     // Never autoCopy here: that writes your real clipboard. The note alone
     // shows what an auto-copied answer looks like.
     panel.showAnswer("It arrives at 6:15 pm.\n3:40 pm + 2 h = 5:40 pm.\n5:40 pm + 35 min = 6:15 pm.")

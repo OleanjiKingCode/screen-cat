@@ -38,16 +38,37 @@ enum Answer {
 /// Answers a question with Claude. With your own API key it calls the Claude
 /// API directly. Without one it runs the `claude` command line tool with the
 /// login it already has. One question at a time: a new one cancels the one
-/// before it.
+/// before it. Both ways stream, so the card fills in as Claude writes.
 ///
 /// The tool runs with no tools, no MCP servers, no CLAUDE.md and no memory,
 /// from an empty folder, so your coding setup does not leak into the answers.
 final class Asker {
     private var process: Process?
-    private var task: URLSessionDataTask?
+    private var apiJob: Task<Void, Never>?
     /// Bumped on every ask and cancel, so a late reply to an old question is
     /// dropped instead of replacing the new one.
     private var generation = 0
+    /// A `claude` already started and waiting for its question. Starting the
+    /// tool takes a few seconds before it even asks Claude, so while LLM mode
+    /// is on one is kept ready, and each question takes it.
+    private var spare: Spare?
+    /// Keep a spare ready. On while LLM mode is on.
+    var keepWarm = false
+    private var warmConfig: Config?
+
+    private struct Spare {
+        let process: Process
+        let input: Pipe
+        let output: Pipe
+        let errors: Pipe
+        /// The tool, model and effort it was started with.
+        let key: String
+        let born: Date
+    }
+
+    /// A spare older than this is swapped for a new one when asked, in case
+    /// the login it started with has gone stale.
+    private static let spareLifetime: TimeInterval = 30 * 60
 
     static let systemPrompt = """
     You are the brain of Screen Cat, a desktop pet cat. The user just copied some text or took \
@@ -67,6 +88,13 @@ final class Asker {
     in plain text, for example x^2 + 3x = 10, sqrt(2), pi.
     """
 
+    /// The models the LLM menu offers, fastest first.
+    static let models: [(id: String, name: String)] = [
+        ("claude-haiku-5-5", "Haiku 5.5 (fastest)"),
+        ("claude-sonnet-5-5", "Sonnet 5.5"),
+        ("claude-opus-5-5", "Opus 5.5 (smartest)"),
+    ]
+
     /// launchd starts the cat with a bare PATH, so the usual install spots are
     /// checked by hand.
     static func claudePath(_ configured: String) -> String? {
@@ -79,52 +107,64 @@ final class Asker {
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    /// A question is out and its answer has not come back yet.
+    var isAsking: Bool { process != nil || apiJob != nil }
+
     func cancel() {
         generation += 1
         process?.terminate()
         process = nil
-        task?.cancel()
-        task = nil
+        apiJob?.cancel()
+        apiJob = nil
     }
 
-    /// Calls `done` once, on the main queue, unless cancelled first. `history`
-    /// is the conversation so far on the card, oldest first.
-    func ask(_ question: Question, after history: [Turn] = [], config: Config,
-             done: @escaping (Answer) -> Void) {
-        cancel()
-        let mine = generation
-        let finish: (Answer) -> Void = { [weak self] answer in
-            DispatchQueue.main.async {
-                guard let self, self.generation == mine else { return }
-                // Once only: a timeout and the reader can both get here.
-                self.generation += 1
-                self.process = nil
-                self.task = nil
-                done(answer)
-            }
-        }
-        if let key = APIKey.load() {
-            askAPI(question, after: history, key: key, config: config, finish: finish)
+    /// Has a `claude` ready for the next question, started with these
+    /// settings. Does nothing with an API key, which needs no tool, or when
+    /// `keepWarm` is off. A spare started with other settings is replaced.
+    func prewarm(_ config: Config) {
+        warmConfig = config
+        guard keepWarm, APIKey.load() == nil, let exe = Self.claudePath(config.llmClaudePath) else {
+            dropSpare()
             return
         }
-        guard let exe = Self.claudePath(config.llmClaudePath) else {
-            finish(.failed("Could not find the claude command. Install Claude Code, or set llmClaudePath in settings."))
-            return
-        }
-        guard let line = Self.inputLine(question, after: history) else {
-            finish(.failed("Could not read what you copied."))
-            return
-        }
+        let key = Self.spareKey(exe, config)
+        if let spare, spare.key == key, spare.process.isRunning,
+           Date().timeIntervalSince(spare.born) < Self.spareLifetime { return }
+        dropSpare()
+        spare = Self.launch(exe, config)
+    }
 
+    func dropSpare() {
+        spare?.process.terminate()
+        spare = nil
+    }
+
+    private static func spareKey(_ exe: String, _ config: Config) -> String {
+        "\(exe)|\(config.llmModel)|\(config.llmEffort)"
+    }
+
+    /// Takes the spare when it was started with these settings and is still
+    /// fresh, else nil.
+    private func takeSpare(_ key: String) -> Spare? {
+        guard let s = spare else { return nil }
+        spare = nil
+        if s.key == key, s.process.isRunning, Date().timeIntervalSince(s.born) < Self.spareLifetime { return s }
+        s.process.terminate()
+        return nil
+    }
+
+    /// Starts `claude`, which then waits for its question on standard input.
+    private static func launch(_ exe: String, _ config: Config) -> Spare? {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ScreenCatLLM")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: exe)
         p.currentDirectoryURL = folder
         p.arguments = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+                       "--include-partial-messages",
                        "--tools", "", "--strict-mcp-config", "--disable-slash-commands",
                        "--no-session-persistence", "--model", config.llmModel, "--effort", config.llmEffort,
-                       "--system-prompt", Self.systemPrompt]
+                       "--system-prompt", systemPrompt]
         var env = ProcessInfo.processInfo.environment
         env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
@@ -138,9 +178,54 @@ final class Asker {
         do {
             try p.run()
         } catch {
-            finish(.failed("Could not start claude: \(error.localizedDescription)"))
+            return nil
+        }
+        return Spare(process: p, input: input, output: output, errors: errors,
+                     key: spareKey(exe, config), born: Date())
+    }
+
+    /// Calls `done` once, on the main queue, unless cancelled first. `history`
+    /// is the conversation so far on the card, oldest first. `partial` gets
+    /// the answer so far, on the main queue, as it streams in.
+    func ask(_ question: Question, after history: [Turn] = [], config: Config,
+             partial: ((String) -> Void)? = nil, done: @escaping (Answer) -> Void) {
+        cancel()
+        let mine = generation
+        let finish: (Answer) -> Void = { [weak self] answer in
+            DispatchQueue.main.async {
+                guard let self, self.generation == mine else { return }
+                // Once only: a timeout and the reader can both get here.
+                self.generation += 1
+                self.process = nil
+                self.apiJob = nil
+                done(answer)
+                // Ready for the next question, now this one is done.
+                if let warm = self.warmConfig { self.prewarm(warm) }
+            }
+        }
+        let progress = Self.throttled { [weak self] text in
+            DispatchQueue.main.async {
+                guard let self, self.generation == mine else { return }
+                partial?(text)
+            }
+        }
+        if let key = APIKey.load() {
+            askAPI(question, after: history, key: key, config: config, progress: progress, finish: finish)
             return
         }
+        guard let exe = Self.claudePath(config.llmClaudePath) else {
+            finish(.failed("Could not find the claude command. Install Claude Code, or set llmClaudePath in settings."))
+            return
+        }
+        guard let line = Self.inputLine(question, after: history) else {
+            finish(.failed("Could not read what you copied."))
+            return
+        }
+        guard let tool = takeSpare(Self.spareKey(exe, config)) ?? Self.launch(exe, config) else {
+            finish(.failed("Could not start claude."))
+            return
+        }
+        let p = tool.process
         process = p
 
         // Both pipes are drained on their own queues, or a chatty stderr could
@@ -149,17 +234,42 @@ final class Asker {
         let drained = DispatchGroup()
         drained.enter()
         DispatchQueue.global().async {
-            errorText = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            errorText = String(decoding: tool.errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             drained.leave()
         }
         DispatchQueue.global().async {
             // A screenshot is a few MB of base64, so the write can block until
             // claude reads it. Never on the main thread.
-            input.fileHandleForWriting.write(line)
-            try? input.fileHandleForWriting.close()
+            tool.input.fileHandleForWriting.write(line)
+            try? tool.input.fileHandleForWriting.close()
         }
         DispatchQueue.global().async {
-            let out = output.fileHandleForReading.readDataToEndOfFile()
+            // Read as it comes. The answer is complete at the end of Claude's
+            // message; the tool then spends a few more seconds on its own
+            // bookkeeping before it exits, which nobody needs to wait for.
+            var out = Data()
+            var pending = Data()
+            var stream = CLIStream()
+            let handle = tool.output.fileHandleForReading
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break }
+                out.append(chunk)
+                pending.append(chunk)
+                while let newline = pending.firstIndex(of: 0x0A) {
+                    let line = pending[pending.startIndex..<newline]
+                    pending.removeSubrange(pending.startIndex...newline)
+                    switch stream.feed(line) {
+                    case .partial(let text):
+                        progress(text)
+                    case .finished(let answer):
+                        finish(answer)
+                        p.terminate()
+                    case nil:
+                        break
+                    }
+                }
+            }
             p.waitUntilExit()
             drained.wait()
             finish(Self.parse(out, status: p.terminationStatus, errors: errorText))
@@ -171,19 +281,37 @@ final class Asker {
         }
     }
 
+    /// Passes on at most one update every 60 ms, so a fast stream does not
+    /// lay out the card hundreds of times. The last text always arrives with
+    /// the finished answer, so a skipped update is never lost.
+    private static func throttled(_ send: @escaping (String) -> Void) -> (String) -> Void {
+        let lock = NSLock()
+        var last: TimeInterval = 0
+        return { text in
+            let now = ProcessInfo.processInfo.systemUptime
+            lock.lock()
+            let due = now - last >= 0.06
+            if due { last = now }
+            lock.unlock()
+            if due { send(text) }
+        }
+    }
+
     /// Models that take `fallbacks: "default"`: a declined answer is retried
     /// on another model by the API instead of coming back empty.
     private static let fallbackModels: Set<String> = [
         "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5",
     ]
 
-    /// Straight to the Claude API with your key. Two or three seconds faster
-    /// than the command line tool, and works on a Mac without Claude Code.
+    /// Straight to the Claude API with your key, streamed. Two or three
+    /// seconds faster than the command line tool, and works on a Mac without
+    /// Claude Code.
     private func askAPI(_ question: Question, after history: [Turn], key: String, config: Config,
-                        finish: @escaping (Answer) -> Void) {
+                        progress: @escaping (String) -> Void, finish: @escaping (Answer) -> Void) {
         var body: [String: Any] = [
             "model": config.llmModel,
             "max_tokens": 16000,
+            "stream": true,
             "system": Self.systemPrompt,
             "output_config": ["effort": config.llmEffort],
             "messages": Self.messages(question, after: history),
@@ -203,38 +331,44 @@ final class Asker {
             return
         }
         request.httpBody = data
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error as? URLError, error.code == .cancelled { return }
-            if let error {
+        apiJob = Task.detached {
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard status == 200 else {
+                    // An error is one JSON body, not a stream.
+                    var whole = Data()
+                    for try await byte in bytes { whole.append(byte) }
+                    finish(Self.parseAPI(whole, status: status))
+                    return
+                }
+                var stream = APIStream()
+                for try await line in bytes.lines {
+                    switch stream.feed(line) {
+                    case .partial(let text):
+                        progress(text)
+                    case .finished(let answer):
+                        finish(answer)
+                        return
+                    case nil:
+                        break
+                    }
+                }
+                finish(stream.end())
+            } catch {
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled { return }
                 finish(.failed("Could not reach the Claude API: \(error.localizedDescription)"))
-                return
             }
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            finish(Self.parseAPI(data ?? Data(), status: status))
         }
-        self.task = task
-        task.resume()
     }
 
-    /// The reply's text blocks, joined; thinking blocks are skipped. A refusal
-    /// or an API error comes back as a reason to show on the card.
+    /// An error reply from the API, as a reason to show on the card.
     private static func parseAPI(_ data: Data, status: Int) -> Answer {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .failed("The Claude API sent back something unreadable (HTTP \(status)).")
         }
-        if let error = obj["error"] as? [String: Any] {
-            let message = error["message"] as? String ?? "unknown error"
-            return .failed(status == 401 ? "Your API key was not accepted: \(message)" : "Claude API error: \(message)")
-        }
-        if obj["stop_reason"] as? String == "refusal" {
-            return .failed("Claude would not answer this one.")
-        }
-        let blocks = obj["content"] as? [[String: Any]] ?? []
-        let text = blocks.filter { $0["type"] as? String == "text" }
-            .compactMap { $0["text"] as? String }
-            .joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? .failed("Claude sent back an empty answer.") : .text(text)
+        let message = (obj["error"] as? [String: Any])?["message"] as? String ?? "unknown error (HTTP \(status))"
+        return .failed(status == 401 ? "Your API key was not accepted: \(message)" : "Claude API error: \(message)")
     }
 
     /// The conversation as API messages: each earlier question and its
@@ -281,8 +415,9 @@ final class Asker {
         return data
     }
 
-    /// The last line of claude's output is a "result" event with the reply,
-    /// or the reason there is none (not logged in, out of usage, and so on).
+    /// When the stream ended without a finished message: the last line of
+    /// claude's output is a "result" event with the reply, or the reason
+    /// there is none (not logged in, out of usage, and so on).
     private static func parse(_ out: Data, status: Int32, errors: String) -> Answer {
         for line in String(decoding: out, as: UTF8.self).split(separator: "\n").reversed() {
             guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
@@ -295,6 +430,77 @@ final class Asker {
         }
         let tail = errors.split(separator: "\n").last.map(String.init) ?? ""
         return .failed(tail.isEmpty ? "claude exited with code \(status) and no answer." : tail)
+    }
+}
+
+/// What one line of a stream says: more of the answer, or the end of it.
+enum StreamStep {
+    case partial(String)
+    case finished(Answer)
+}
+
+/// Claude's streaming events, shared by the API and the command line tool:
+/// text deltas build up the answer, and the end of the message finishes it.
+/// Thinking and other blocks are skipped.
+struct MessageEvents {
+    private(set) var text = ""
+    private var stop: String?
+
+    mutating func handle(_ event: [String: Any]) -> StreamStep? {
+        switch event["type"] as? String {
+        case "content_block_delta":
+            guard let delta = event["delta"] as? [String: Any], delta["type"] as? String == "text_delta",
+                  let piece = delta["text"] as? String, !piece.isEmpty else { return nil }
+            text += piece
+            return .partial(text)
+        case "message_delta":
+            stop = (event["delta"] as? [String: Any])?["stop_reason"] as? String
+            return nil
+        case "message_stop":
+            return .finished(end())
+        case "error":
+            let message = (event["error"] as? [String: Any])?["message"] as? String ?? "unknown error"
+            return .finished(.failed("Claude API error: \(message)"))
+        default:
+            return nil
+        }
+    }
+
+    /// The answer as it stands. A refusal drops any text already streamed:
+    /// it is not an answer.
+    func end() -> Answer {
+        if stop == "refusal" { return .failed("Claude would not answer this one.") }
+        let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return answer.isEmpty ? .failed("Claude sent back an empty answer.") : .text(answer)
+    }
+}
+
+/// The API's server-sent events, one line at a time.
+struct APIStream {
+    private var events = MessageEvents()
+
+    mutating func feed(_ line: String) -> StreamStep? {
+        guard line.hasPrefix("data:") else { return nil }
+        let json = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else { return nil }
+        return events.handle(obj)
+    }
+
+    func end() -> Answer { events.end() }
+}
+
+/// The command line tool's stream-json output, one line at a time. With
+/// `--include-partial-messages` it wraps the API's events in "stream_event"
+/// lines. Anything else (its own status lines, the final "result") is left
+/// to `Asker.parse` once the tool exits.
+struct CLIStream {
+    private var events = MessageEvents()
+
+    mutating func feed<Bytes: DataProtocol>(_ line: Bytes) -> StreamStep? {
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+              obj["type"] as? String == "stream_event",
+              let event = obj["event"] as? [String: Any] else { return nil }
+        return events.handle(event)
     }
 }
 

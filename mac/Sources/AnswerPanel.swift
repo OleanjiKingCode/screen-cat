@@ -309,6 +309,17 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         if showsOnScreen { orderFrontRegardless() }
     }
 
+    /// The answer so far, while Claude is still writing it. The card grows
+    /// as it fills; Copy and the follow-up field wait for the whole answer.
+    func showPartial(_ text: String) {
+        guard !text.isEmpty else { return }
+        if !dots.isHidden {
+            stopThinking()
+            setStatus(.writing)
+        }
+        setBody(answerText(text))
+    }
+
     /// The answer. It stays up until you close it, however long you read.
     /// With `autoCopy` it also goes on the clipboard, and the header says so.
     func showAnswer(_ text: String, autoCopy: Bool = false) {
@@ -357,12 +368,12 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         scroll.isHidden = false
     }
 
-    private enum Status { case thinking, answer, failed }
+    private enum Status { case thinking, writing, answer, failed }
 
     private func setStatus(_ s: Status) {
         switch s {
-        case .thinking:
-            status.text = "THINKING"
+        case .thinking, .writing:
+            status.text = s == .thinking ? "THINKING" : "WRITING"
             status.fill = NSColor(srgbRed: 1.0, green: 0.91, blue: 0.64, alpha: 1)
             status.textColor = NSColor(srgbRed: 0.48, green: 0.31, blue: 0.0, alpha: 1)
         case .answer:
