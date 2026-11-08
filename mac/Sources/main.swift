@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var window: OverlayWindow!
@@ -61,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var answerPanel: AnswerPanel?
     /// The newest answer, so copying part of it is not asked about again.
     private var lastAnswer = ""
+    /// The last ten answers, for the menu.
+    private let answers = AnswerHistory()
+    /// Option+Cmd+A, held while LLM mode is on.
+    private var hotKey: HotKey?
     /// What has been asked and answered on the card that is up, so a
     /// follow-up typed on it is answered in context.
     private var conversation: [Turn] = []
@@ -344,10 +349,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let llm = submenu(menu, "LLM mode", tag: 710)
         add(llm, "Answer what I copy or screenshot", #selector(toggleLLMMode), tag: 700)
         add(llm, "Only when I copy twice (⌘C ⌘C)", #selector(toggleCopyTwice), tag: 704)
-        add(llm, "Ask about what I copied now", #selector(askAboutClipboard))
+        add(llm, "Ask about what I copied now", #selector(askAboutClipboard), tag: 705)
+        _ = submenu(llm, "Recent answers", tag: 730)
         llm.addItem(.separator())
         add(llm, "Show answer box", #selector(toggleShowAnswers), tag: 702)
         add(llm, "Copy answers to clipboard", #selector(toggleCopyAnswers), tag: 701)
+        let model = submenu(llm, "Model", tag: 740)
+        for (i, m) in Asker.models.enumerated() {
+            add(model, m.name, #selector(pickModel(_:)), tag: 741 + i)
+        }
         llm.addItem(.separator())
         add(llm, "Set API key…", #selector(setAPIKey))
         add(llm, "Answers come from", nil, tag: 703)
@@ -409,6 +419,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menuItem(810)?.title = "Pet: \(c.pet == "dog" ? "Dog" : "Cat")"
         menuItem(510)?.title = "Mode: \(c.mode == "crawler" ? "Crawler" : "Normal")"
         menuItem(710)?.title = "LLM mode: \(c.llmMode ? "On" : "Off")"
+        for (i, m) in Asker.models.enumerated() { tick(741 + i, c.llmModel == m.id) }
+        let modelName = Asker.models.first { $0.id == c.llmModel }?.name.components(separatedBy: " (").first
+        menuItem(740)?.title = "Model: \(modelName ?? c.llmModel)"
+        // The shortcut shows on the item only while it really works.
+        if let ask = menuItem(705) {
+            ask.keyEquivalent = hotKey == nil ? "" : "a"
+            ask.keyEquivalentModifierMask = [.command, .option]
+        }
+        fillRecentAnswers()
         menuItem(703)?.title = APIKey.isSet ? "Answers come from your API key" : "Answers come from your Claude Code login"
         menuItem(703)?.isEnabled = false
         guard let item = menuItem(200) else { return }
@@ -629,6 +648,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         default:
             break
         }
+        // With a key no `claude` is needed; without one, have one ready.
+        applyLLMMode()
     }
 
     @objc private func togglePause(_ sender: NSMenuItem) {
@@ -713,6 +734,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// was already on the clipboard.
     private func applyLLMMode() {
         let c = scene.config
+        asker.keepWarm = c.llmMode
+        asker.prewarm(c)
+        hotKey = c.llmMode && c.llmShortcut ? (hotKey ?? makeHotKey()) : nil
         guard c.llmMode else {
             if questions.isRunning { ActivityLog.shared.cat("llm mode off") }
             questions.stop()
@@ -756,13 +780,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ActivityLog.shared.cat("llm: asked about \(question.summary)")
         let asked = Date()
         let c = scene.config
-        asker.ask(question, after: history, config: c) { [weak self] answer in
+        asker.ask(question, after: history, config: c, partial: { panel.showPartial($0) }) { [weak self] answer in
             guard let self else { return }
             let took = String(format: "%.1fs", Date().timeIntervalSince(asked))
             switch answer {
             case .text(let text):
                 ActivityLog.shared.cat("llm: answered in \(took)")
                 self.lastAnswer = text
+                self.answers.add(question, answer: text)
                 self.conversation = history + [Turn(question: question, answer: text)]
                 // Copied through the card, so the watcher knows it is ours.
                 panel.showAnswer(text, autoCopy: c.llmCopyAnswer)
@@ -786,6 +811,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .text(let text):
                 ActivityLog.shared.cat("llm: answered in \(took), copied")
                 self.lastAnswer = text
+                self.answers.add(question, answer: text)
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
                 self.questions.ownChange = NSPasteboard.general.changeCount
@@ -822,6 +848,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Sends the sitting cat off and drops any answer still coming.
     private func closeAnswer() {
+        if asker.isAsking { ActivityLog.shared.cat("llm: card closed before the answer") }
         asker.cancel()
         conversation = []
         (behavior as? AskBehavior)?.release()
@@ -838,6 +865,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         answerPanel = panel
         return panel
     }
+
+    private func makeHotKey() -> HotKey? {
+        let key = HotKey(keyCode: kVK_ANSI_A, modifiers: cmdKey | optionKey) { [weak self] in
+            self?.askAboutClipboard()
+        }
+        if key == nil { ActivityLog.shared.cat("llm: Option+Cmd+A is taken by another app") }
+        return key
+    }
+
+    /// Haiku, Sonnet or Opus. A ready `claude` started for the old model is
+    /// swapped for one on the new model.
+    @objc private func pickModel(_ sender: NSMenuItem) {
+        let index = sender.tag - 741
+        guard Asker.models.indices.contains(index) else { return }
+        scene.config.llmModel = Asker.models[index].id
+        Config.update("llmModel", to: scene.config.llmModel)
+        ActivityLog.shared.cat("llm: model \(scene.config.llmModel)")
+        applyLLMMode()
+    }
+
+    /// The Recent answers submenu, newest first. Each copies its answer.
+    private func fillRecentAnswers() {
+        guard let menu = menuItem(730)?.submenu else { return }
+        menu.removeAllItems()
+        let time = DateFormatter()
+        time.dateStyle = .none
+        time.timeStyle = .short
+        for (i, entry) in answers.entries.enumerated() {
+            let item = NSMenuItem(title: AnswerHistory.oneLine(entry.answer, max: 50),
+                                  action: #selector(copyRecentAnswer(_:)), keyEquivalent: "")
+            item.tag = i
+            item.target = self
+            item.toolTip = "\(time.string(from: entry.at)), about \(entry.asked)"
+            menu.addItem(item)
+        }
+        if answers.entries.isEmpty {
+            let none = NSMenuItem(title: "No answers yet", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+        } else {
+            menu.addItem(.separator())
+            let clear = NSMenuItem(title: "Clear recent answers", action: #selector(clearRecentAnswers),
+                                   keyEquivalent: "")
+            clear.target = self
+            menu.addItem(clear)
+        }
+    }
+
+    @objc private func copyRecentAnswer(_ sender: NSMenuItem) {
+        guard answers.entries.indices.contains(sender.tag) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(answers.entries[sender.tag].answer, forType: .string)
+        // Ours, so LLM mode does not ask about it.
+        questions.ownChange = NSPasteboard.general.changeCount
+        statusItem.button?.toolTip = "Screen Cat: answer copied"
+        setBadge("✅", for: 2)
+    }
+
+    @objc private func clearRecentAnswers() { answers.clear() }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {
         LoginItem.setEnabled(!LoginItem.isEnabled)
@@ -860,7 +946,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(ActivityLog.folder)
     }
 
-    func applicationWillTerminate(_ note: Notification) { ActivityLog.shared.stop() }
+    func applicationWillTerminate(_ note: Notification) {
+        asker.dropSpare()
+        ActivityLog.shared.stop()
+    }
 
     /// Puts the idle crawl's glitch over the whole of the cat's screen, menu
     /// bar and Dock included, and renders it every third frame.
@@ -1072,7 +1161,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         takeover?.clear()
         // The card goes with the cat, whatever sent the cat away. An answer
         // with no card is not the cat's, so a new routine leaves it running.
-        if wasAsking { asker.cancel() }
+        if wasAsking {
+            if asker.isAsking { ActivityLog.shared.cat("llm: cat went in before the answer") }
+            asker.cancel()
+        }
         conversation = []
         answerPanel?.dismiss()
         shownRecipe = -1
@@ -1347,7 +1439,9 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--playground" 
 }
 
 // `--ask <text>` or `--ask-image <file>` sends one question through LLM mode's
-// asker, with the real settings, and prints the answer. No cat, no card.
+// asker, with the real settings, and prints the answer and how long the first
+// words took. `--model <id>` tries another model; `--warm` asks a claude that
+// was started ahead, as LLM mode does. No cat, no card.
 if CommandLine.arguments.count >= 3, ["--ask", "--ask-image"].contains(CommandLine.arguments[1]) {
     let arg = CommandLine.arguments[2]
     let question: Question
@@ -1359,15 +1453,32 @@ if CommandLine.arguments.count >= 3, ["--ask", "--ask-image"].contains(CommandLi
         print("could not read \(arg)")
         exit(1)
     }
+    var config = Config.load()
+    if let i = CommandLine.arguments.firstIndex(of: "--model"), i + 1 < CommandLine.arguments.count {
+        config.llmModel = CommandLine.arguments[i + 1]
+    }
     let asker = Asker()
+    // `--warm` starts a claude first and lets it settle, as LLM mode does.
+    if CommandLine.arguments.contains("--warm") {
+        asker.keepWarm = true
+        asker.prewarm(config)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 8))
+    }
     let started = Date()
+    var firstText: TimeInterval?
+    var updates = 0
     var finished = false
-    asker.ask(question, config: Config.load()) { answer in
+    asker.ask(question, config: config, partial: { _ in
+        updates += 1
+        if firstText == nil { firstText = Date().timeIntervalSince(started) }
+    }) { answer in
+        asker.keepWarm = false
         switch answer {
         case .text(let text): print(text)
         case .failed(let why): print("FAILED: \(why)")
         }
-        print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))
+        print(String(format: "(%.1fs, first words at %.1fs, %d updates)",
+                     Date().timeIntervalSince(started), firstText ?? -1, updates))
         finished = true
     }
     while !finished { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }

@@ -153,8 +153,9 @@ Tick **LLM mode (answers what you copy or screenshot)** in the menu. From then
 on, text you copy twice in a row (Cmd+C Cmd+C, within a second), any picture
 you copy, and every screenshot you take go to Claude. One copy of text is just
 a copy, so everyday copying never asks. The cat walks on, sits, and holds up a card: what you
-asked, pulsing dots while it thinks, then the answer, with its first line (or
-the first sentence of a long one) as a headline. It works out what you want: a question gets answered, an equation
+asked, pulsing dots while it thinks, then the answer, written into the card as
+Claude writes it, with its first line (or the first sentence of a long one) as
+a headline. **Copy** and the follow-up field come once the whole answer is in. It works out what you want: a question gets answered, an equation
 or sum gets solved with the steps, a claim gets checked, a word gets explained,
 code or an error gets explained or fixed. The answer is plain text you can
 select. Each answer also goes on the clipboard as it arrives, ready to paste
@@ -187,13 +188,33 @@ twice still counts as one. A copied picture, such as a screenshot copied with
 Control, still asks at once. Untick it and every copy asks, as before.
 
 **Ask about what I copied** asks about the clipboard once, with or without LLM
-mode.
+mode. While LLM mode is on, **Option+Cmd+A** does the same from any app, with no
+need to copy twice (`llmShortcut`, on by default). It takes those keys from
+every app, Finder's Deselect All included; set `llmShortcut` to `false` to give
+them back.
+
+**Model** picks who answers: **Haiku 5.5** (fastest), **Sonnet 5.5** or **Opus
+5.5** (smartest, the default). Saved as `llmModel`.
+
+**Recent answers** lists the last ten answers, newest first; hover one for when
+it came and what it was about, click it to copy it again. They are kept in
+`~/Library/Application Support/ScreenCat/answers.json`, readable only by you,
+so they survive a restart. **Clear recent answers** empties the list.
 
 - **How it talks to Claude**: it runs the `claude` command line tool (Claude
   Code) with the login you already have, so there is no API key to set up. It
   runs with no tools, no MCP servers, no CLAUDE.md and no memory, from an empty
-  folder. An answer takes about 7 to 10 seconds. If `claude` is not in
-  `~/.local/bin`, `/opt/homebrew/bin` or `/usr/local/bin`, set `llmClaudePath`.
+  folder. Starting `claude` takes a few seconds before it even asks Claude,
+  so while LLM mode is on one is started ahead and waits for the next
+  question, and the answer is used as soon as Claude's message ends, without
+  waiting for the tool to exit. The first words show in about 1.5 seconds and
+  a short answer is done in about 2. Without a ready one (just after you
+  change the model, say) a short answer takes about 5. A waiting `claude` is
+  replaced after 30 minutes and stops when LLM mode goes off or the cat quits.
+  If `claude` is not in `~/.local/bin`, `/opt/homebrew/bin` or
+  `/usr/local/bin`, set `llmClaudePath`. Test from a terminal with
+  `--ask "text" [--model <id>] [--warm]`, which prints the answer and when
+  the first words came.
 - **Screenshots** are picked up from the folder the Screenshot app saves to and
   from the Desktop, by the tag macOS puts on every screenshot. macOS asks once
   for access to the Desktop folder. The file only appears after the floating
@@ -347,8 +368,11 @@ the answer box is hidden. The menu, top to bottom:
   - **Answer what I copy or screenshot**: the mode itself.
   - **Only when I copy twice (⌘C ⌘C)**: on by default; untick it to answer
     every copy of text. Pictures ask at once either way.
-  - **Ask about what I copied now**: once, with or without the mode.
+  - **Ask about what I copied now**: once, with or without the mode. Option+Cmd+A
+    does it from any app while the mode is on.
+  - **Recent answers**: the last ten, click one to copy it again.
   - **Show answer box** and **Copy answers to clipboard**.
+  - **Model**: Haiku 5.5 (fastest), Sonnet 5.5 or Opus 5.5 (smartest).
   - **Set API key…**: paste an Anthropic API key, kept in the keychain. With a
     key, answers come from the Claude API directly; without one, from your
     Claude Code login. The last line says which one is in use.
@@ -436,9 +460,10 @@ SHA-256 for the release notes.
 | `llmCopyTwice` | `true` | Ask only when the same text is copied twice in a row (Cmd+C Cmd+C); a copied picture still asks at once. `false` asks on every copy. Also on the menu as **Only when I copy twice**. |
 | `llmCopyAnswer` | `true` | Put each answer on the clipboard as it arrives. Also on the menu as **Copy answers to clipboard**. |
 | `llmShowAnswer` | `true` | Show the cat and the answer card. `false` sends answers only to the clipboard, with a badge on the menu bar icon. Also on the menu as **Show answer box**. |
-| `llmModel` | `claude-opus-5-5` | The Claude model that answers. |
+| `llmModel` | `claude-opus-5-5` | The Claude model that answers: `claude-haiku-5-5`, `claude-sonnet-5-5` or `claude-opus-5-5`. Also on the menu as **Model**. |
 | `llmEffort` | `medium` | How hard it thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `llmClaudePath` | `""` | Full path to `claude`, if it is not in one of the usual places. |
+| `llmShortcut` | `true` | Option+Cmd+A asks about the clipboard from any app while LLM mode is on. `false` frees the keys. |
 | `activityLog` | `true` | Keep the daily activity log in `~/Library/Logs/ScreenCat`. |
 | `activityLogDays` | `30` | Delete day files older than this. `0` keeps them forever. |
 | `opacity` | `1.0` | Overall transparency, `0.1` to `1.0`. |

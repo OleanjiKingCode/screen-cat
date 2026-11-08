@@ -141,6 +141,9 @@ struct Config {
     var llmEffort = "medium"
     /// Full path to `claude`, if it is not in one of the usual places.
     var llmClaudePath = ""
+    /// Option+Cmd+A asks about the clipboard from any app while LLM mode is
+    /// on. It takes the keys from every app, Finder's Deselect All included.
+    var llmShortcut = true
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary of apps, sleep, Bluetooth and what is running,
@@ -250,6 +253,7 @@ struct Config {
         c.llmModel              = str("llmModel")              ?? c.llmModel
         c.llmEffort             = str("llmEffort")             ?? c.llmEffort
         c.llmClaudePath         = str("llmClaudePath")         ?? c.llmClaudePath
+        c.llmShortcut           = bool("llmShortcut")          ?? c.llmShortcut
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
         c.activityLogDays       = num("activityLogDays")       ?? c.activityLogDays
@@ -364,6 +368,7 @@ struct Config {
             "llmShowAnswer": d.llmShowAnswer,
             "llmModel": d.llmModel,
             "llmEffort": d.llmEffort,
+            "llmShortcut": d.llmShortcut,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,

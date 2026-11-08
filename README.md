@@ -66,10 +66,12 @@ Needs macOS 12 or later, Apple silicon or Intel.
 
 Open the menu and go to **LLM mode > Answer what I copy or screenshot**. From then on:
 
-- **Copy any text twice in a row** (Cmd+C Cmd+C, within a second): a question, an equation, a claim, a word, an error message. The pet walks on with a card: what you asked, dots while it thinks, then the answer, its first line (or the first sentence of a long one) in bold. One copy is just a copy, so everyday copying never asks. A copied picture still asks at once. To answer every copy of text instead, untick **LLM mode > Only when I copy twice (⌘C ⌘C)**.
+- **Copy any text twice in a row** (Cmd+C Cmd+C, within a second): a question, an equation, a claim, a word, an error message. The pet walks on with a card: what you asked, dots while it thinks, then the answer, written in as Claude writes it, its first line (or the first sentence of a long one) in bold. A short answer takes about 2 seconds. One copy is just a copy, so everyday copying never asks. A copied picture still asks at once. To answer every copy of text instead, untick **LLM mode > Only when I copy twice (⌘C ⌘C)**.
 - **Take a screenshot** (Cmd+Shift+4) and it answers what is in it. Add Control (Cmd+Ctrl+Shift+4) to copy the screenshot instead, which it picks up instantly.
 - **Ask a follow-up** in the field under the answer: a question about it, or a request like "shorter", "explain step 2" or "in French". Press Enter and the answer comes back on the same card, with the conversation so far. A new copy or screenshot starts a fresh conversation.
-- **Ask about what I copied now** asks once, with or without the mode on.
+- **Ask about what I copied now** asks once, with or without the mode on. While the mode is on, **Option+Cmd+A** does it from any app.
+- **Recent answers** keeps your last ten answers; click one to copy it again.
+- **Model** picks Haiku 5.5 (fastest), Sonnet 5.5 or Opus 5.5 (smartest, the default).
 - **Show answer box** off: no pet, no card, the answer just lands on your clipboard. The menu bar icon shows 💭 while it thinks and ✅ when the answer is ready to paste.
 
 **Where answers come from.** Either:
@@ -88,7 +90,7 @@ Open the menu and go to **LLM mode > Answer what I copy or screenshot**. From th
 | **Pet: Cat / Dog** | Switch pets. |
 | **Mode: Normal / Crawler** | Normal routines, or window-zapping hacker visits. |
 | **Play now** | Walk, nap, ball, beg, ask to play, break some apps, crawl, Zero Day. |
-| **LLM mode** | Turn answering on or off, ask only on a double copy or on every copy, show or hide the answer box, copy answers, set your API key. |
+| **LLM mode** | Turn answering on or off, ask only on a double copy or on every copy, recent answers, show or hide the answer box, copy answers, pick the model, set your API key. |
 | **Stepped out** | Keep the Mac awake. A ☕ shows by the icon. |
 | **Show in screenshots & recordings** | Let captures see the pet and its card. |
 | **Open at login** | Start Screen Cat when you log in. |
