@@ -283,6 +283,10 @@ stack and all come back, a folder before anything that was inside it.
   is busy with an answer card, a game you said yes to, or the idle crawl. A
   film that comes to the front mid-rescue sends the pet home. The item just
   stays in the Trash.
+- **Only from Finder.** It rescues what you throw away in Finder, by dragging
+  or with ⌘⌫. Files an editor or a script moves to the Trash (VS Code
+  deleting a file in a project, say) stay there, and the activity log says
+  which app threw them.
 - **Name taken.** If something new has the old name by then, it comes back
   as "name 2", the way Finder numbers copies.
 - **Only the watched folders.** The Desktop, Documents and Downloads by

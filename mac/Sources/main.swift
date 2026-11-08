@@ -742,6 +742,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let wanted = items.filter { !thrownTwice($0) }
         guard !wanted.isEmpty else { return }
         let names = wanted.map(\.name).joined(separator: ", ")
+        // Only what you throw away in Finder, by dragging or with Cmd+Delete.
+        // An editor or a script moving files to the Trash, such as VS Code
+        // deleting a file in a project, means it.
+        let front = NSWorkspace.shared.frontmostApplication
+        guard front?.bundleIdentifier == "com.apple.finder" else {
+            ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (thrown from \(front?.localizedName ?? "an app"), not Finder)")
+            return
+        }
         guard !paused, !away else {
             ActivityLog.shared.cat("trash rescue: \(names) left in the Trash (\(paused ? "paused" : "away"))")
             return
