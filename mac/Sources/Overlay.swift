@@ -22,7 +22,9 @@ final class OverlayView: NSView {
     var onOKClicked: (() -> Void)?
     /// Seconds into a pet, while the cat is being petted. Draws the hearts.
     var petTime: CGFloat?
-    /// Crawler mode effects, in surface-local coordinates like the cat.
+    /// Crawler mode effects, in surface-local coordinates like the cat. The app
+    /// shows breaches on their own layers instead (`showBreaches`), so only the
+    /// offscreen `--simulate` paints them here.
     var breaches: [Breach] = []
     var zap: Zap?
     var aura: Aura?

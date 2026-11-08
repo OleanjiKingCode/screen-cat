@@ -6,6 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The idle crawl's full-screen glitch, under the cat.
     private var takeover: TakeoverView!
     private var takeoverFrame = 0
+    /// Crawler mode's broken windows, one layer each under the cat, by seed.
+    private var breachViews: [UInt32: TakeoverView] = [:]
     private let zeroDaySound = ZeroDaySound()
     private var shownRecipe = -1
     private var statusItem: NSStatusItem!
@@ -862,6 +864,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                       pulse: idle.pulse, opacity: idle.takeoverOpacity)
     }
 
+    /// Shows each breach on its own layer under the cat, over its window. The
+    /// fade follows every frame, but only one look renders per frame, the one
+    /// whose picture is oldest, so the worst frame costs one look on one
+    /// window. With up to three broken windows each still renders 20 times a
+    /// second; four share the frames at 15.
+    private func showBreaches(_ breaches: [Breach]) {
+        let live = Set(breaches.map(\.seed))
+        for (seed, gone) in breachViews where !live.contains(seed) {
+            gone.removeFromSuperview()
+            breachViews[seed] = nil
+        }
+        if let oldest = breaches.filter({ $0.frames.isStale($0) })
+            .max(by: { $0.frames.staleness($0) < $1.frames.staleness($1) }) {
+            oldest.frames.render(oldest)
+        }
+        let toScreen = scene.surface.transform(for: scene.screenRect)
+        for b in breaches {
+            let breachView: TakeoverView
+            if let existing = breachViews[b.seed] {
+                breachView = existing
+            } else {
+                breachView = TakeoverView(frame: .zero)
+                view.superview?.addSubview(breachView, positioned: .below, relativeTo: view)
+                breachViews[b.seed] = breachView
+            }
+            let rect = b.rect.applying(toScreen).offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
+            if breachView.frame != rect { breachView.frame = rect }
+            breachView.show(frame: b.frames.image, opacity: b.opacity)
+        }
+    }
+
     /// Windows on `screen` worth breaking, in surface-local coordinates: the
     /// ones you can mostly see, from apps that are not on the blocked list, up
     /// to four of them. Window frames need no permission; titles are not read.
@@ -1045,10 +1078,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view?.okHovered = false
         view?.dwellProgress = 0
         view?.petTime = nil
-        view?.breaches = []
         view?.zap = nil
         view?.aura = nil
         takeover?.clear()
+        for breachView in breachViews.values { breachView.removeFromSuperview() }
+        breachViews.removeAll()
         // The card goes with the cat, whatever sent the cat away. An answer
         // with no card is not the cat's, so a new routine leaves it running.
         if wasAsking { asker.cancel() }
@@ -1123,11 +1157,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         view.petTime = petLeft > 0 ? petTime : nil
         let crawl = behavior as? BreachSource
-        view.breaches = crawl?.breaches ?? []
         view.zap = crawl?.zap
         view.aura = crawl?.aura
+        showBreaches(crawl?.breaches ?? [])
         var dirty = scene.cat.bounds
-        for breach in view.breaches { dirty = dirty.union(breach.rect.insetBy(dx: -6, dy: -6)) }
         if let zap = view.zap { dirty = dirty.union(zap.bounds) }
         if let aura = view.aura { dirty = dirty.union(aura.bounds) }
         if let idle = behavior as? IdleCrawlBehavior { showTakeover(idle) }
@@ -1248,6 +1281,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--zeroday-soun
 }
 if CommandLine.arguments.contains("--takeover-bench") {
     benchTakeover()
+    benchBreaches()
     exit(0)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--glitches" {

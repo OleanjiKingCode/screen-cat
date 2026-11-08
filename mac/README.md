@@ -94,12 +94,14 @@ mode drives both, and it is saved as `mode` in the settings.
 - **Normal**: the routines above.
 - **Crawler**: most visits (`crawlChance`, 0.7) become a crawl. The cat puts
   its shades on, walks under up to four windows on the screen, zaps each one
-  with a green bolt from its head, and the window "breaks": it darkens, slices
-  jump sideways in red and cyan, cracks spread from the hit, fictional hacker
-  code types itself out, and a "SYSTEM BREACHED" banner flashes before
-  "REBOOTING..." and it clears. It is all paint on the cat's overlay; no app is
-  touched. Windows of apps on `blockedApps`, and windows mostly hidden behind
-  others, are skipped. **Break some apps (crawler)** runs one now in any mode.
+  with a bolt from its head, and the window "breaks" into one of the 50
+  full-screen glitch styles of the idle crawl (below), cut to that window. Each
+  window in a crawl gets a different style, and the bolt is that style's
+  colour. It flashes as the bolt lands, plays for about four seconds, goes dark
+  behind "REBOOTING..." and fades back to the real app, five seconds in all.
+  It is all paint on the cat's overlay; no app is touched. Windows of apps on
+  `blockedApps`, and windows mostly hidden behind others, are skipped. **Break
+  some apps (crawler)** runs one now in any mode.
 
 **Idle crawl.** After `idleCrawlSeconds` (1800, half an hour) with no mouse, trackpad or
 keyboard input, in **any** mode (normal included), the cat walks onto the
@@ -139,8 +141,16 @@ you back in the app you started in. It does not change the saved mode.
 The glitch renders at half resolution, 20 frames a second, on its own layer
 under the cat; the slowest style takes about 12 ms a frame. See every style:
 `--takeover out.png`; time them: `--takeover-bench`; run the crawl invisibly
-and log it: `--idle-selftest`. The short per-window glitches of crawler mode:
-`--glitches out.png`.
+and log it: `--idle-selftest`.
+
+Crawler mode's broken windows use the same renderer, one layer per window,
+each at about 20 frames a second. When a window's shorter side is under 400
+points, the style is laid out twice as big (four times under 200) and shrunk
+to fit, so its text and boxes do not spill off the edge. Only one window
+renders per frame, so the worst frame costs one style on one window: about
+10 ms for the slowest on a large window, less than one full-screen frame. See
+every style on a small window: `--glitches out.png`. Time them: the second
+part of `--takeover-bench`.
 
 **Open playground** opens a window with its own cat and five pretend apps
 (Terminal, Browser, Notes, Music, Files). Buttons run a walk, nap, ball, feed or

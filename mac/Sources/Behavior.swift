@@ -573,13 +573,6 @@ final class PlayBehavior: Behavior {
     }
 }
 
-// MARK: - Crawler
-
-/// Crawler mode: walks under each target window in turn, zaps it from its head
-/// and watches it "break". The breaking is drawn on the overlay; the windows
-/// themselves are never touched. Movement keeps every rule the other routines
-/// keep: in from the side, level or downhill, out the side. It never climbs to
-/// a window; the zap goes up instead.
 // MARK: - LLM mode
 
 /// LLM mode: walks on, sits under the answer card, and stays while the card is
@@ -642,6 +635,14 @@ final class AskBehavior: Behavior {
     }
 }
 
+// MARK: - Crawler
+
+/// Crawler mode: walks under each target window in turn, zaps it from its head
+/// and watches it "break" into one of the takeover looks, a different one for
+/// each window. The breaking is drawn on the overlay; the windows themselves
+/// are never touched. Movement keeps every rule the other routines keep: in
+/// from the side, level or downhill, out the side. It never climbs to a window;
+/// the zap goes up instead.
 final class CrawlBehavior: Behavior, BreachSource {
     private enum Stage { case walking, zapping, watching, leaving }
     private var stage: Stage = .walking
@@ -651,6 +652,10 @@ final class CrawlBehavior: Behavior, BreachSource {
     private var timer: CGFloat = 0
     private(set) var breaches: [Breach] = []
     private(set) var zap: Zap?
+    /// The takeover looks for this crawl, shuffled, so no two windows get the
+    /// same one. Window `current` gets `looks[current]`.
+    private let looks = Array(glitchRecipes.indices).shuffled()
+    private var look: Int { looks[current % looks.count] }
 
     init(scene: Scene, targets: [CGRect]) {
         let cat = scene.cat
@@ -697,17 +702,16 @@ final class CrawlBehavior: Behavior, BreachSource {
                 let head = CGPoint(x: cat.pos.x, y: cat.pos.y + cat.drawnSize * 0.75)
                 let to = CGPoint(x: min(max(head.x, t.minX + 10), t.maxX - 10),
                                  y: min(max(t.minY + 10, head.y + cat.drawnSize * 0.6), t.maxY - 10))
-                zap = Zap(from: head, to: to, accentIndex: Int.random(in: 0..<glitchAccents.count))
+                zap = Zap(from: head, to: to, accentIndex: accentIndex(nearest: glitchRecipes[look].palette[0]))
                 cat.setClip(.crouch)
                 timer = 0.8
                 stage = .zapping
             }
         case .zapping:
             timer -= dt
-            if timer <= 0, let z = zap {
-                var breach = Breach.random(rect: targets[current], touch: z.to)
-                breach.accentIndex = z.accentIndex
-                breaches.append(breach)
+            if timer <= 0, zap != nil {
+                breaches.append(Breach(rect: targets[current], seed: UInt32.random(in: 1...UInt32.max),
+                                       recipeIndex: look))
                 zap = nil
                 cat.setClip(.sitIdle)
                 timer = 1.8
