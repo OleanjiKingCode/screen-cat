@@ -132,11 +132,23 @@ func makeOverlayWindow(frame: CGRect) -> OverlayWindow {
     w.level = .screenSaver
     // canJoinAllSpaces carries the cat onto every Space, and fullScreenAuxiliary
     // lets it sit over a full-screen app. Without a level above the full-screen
-    // window, though, it would still only ever show on the desktop.
-    w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+    // window, though, it would still only ever show on the desktop. No
+    // stationary: a stationary window that falls off a Space stays off it,
+    // and ordering it front again does not put it back.
+    w.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
     w.isReleasedWhenClosed = false
     w.setFrame(frame, display: false)
     return w
+}
+
+/// True when the window server lists `window` as on screen now, which only
+/// happens on the Space in front. Asked straight from the window list, where
+/// `isOnActiveSpace` can answer from a flag AppKit keeps.
+func isOnScreenNow(_ window: NSWindow) -> Bool {
+    guard window.isVisible,
+          let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
+    else { return false }
+    return list.contains { $0[kCGWindowNumber as String] as? Int == window.windowNumber }
 }
 
 /// Named window levels. "top" is the only one that shows over full-screen apps.
