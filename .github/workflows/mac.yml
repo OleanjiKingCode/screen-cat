@@ -1,0 +1,88 @@
+name: mac
+
+on:
+  push:
+    paths:
+      - "mac/**"
+      - ".github/workflows/mac.yml"
+  pull_request:
+    paths:
+      - "mac/**"
+      - ".github/workflows/mac.yml"
+  workflow_dispatch:
+  # A published release gets the Mac zip attached.
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mac
+    steps:
+      - uses: actions/checkout@v4
+
+      # One binary for Apple silicon and Intel Macs, as release.sh builds it.
+      # A release takes its version from the tag (v1.2.0 -> 1.2.0).
+      - name: Build
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ -n "$TAG" ]; then export VERSION="${TAG#v}"; fi
+          UNIVERSAL=1 ./build.sh
+
+      - name: Check both chips are in the binary
+        run: |
+          archs="$(lipo -archs ScreenCat.app/Contents/MacOS/ScreenCat)"
+          echo "$archs"
+          [[ "$archs" == *arm64* && "$archs" == *x86_64* ]]
+
+      # Every clip on one sheet, drawn offscreen. Fails if the sprites do not
+      # load or draw.
+      - name: Preview
+        run: ScreenCat.app/Contents/MacOS/ScreenCat --preview preview.png && test -s preview.png
+
+      # ditto keeps the bundle intact; no ._ files to break the signature.
+      - name: Zip
+        run: ditto -c -k --norsrc --noextattr --keepParent ScreenCat.app ScreenCat-mac.zip
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenCat-mac
+          path: mac/ScreenCat-mac.zip
+
+      - name: Upload preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenCat-mac-preview
+          path: mac/preview.png
+          if-no-files-found: ignore
+
+  # Only this job can write to the repository, and only for a published release.
+  release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ScreenCat-mac
+          path: out
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          zip="ScreenCat-mac-${TAG#v}.zip"
+          mv out/ScreenCat-mac.zip "$zip"
+          gh release upload "$TAG" "$zip" --clobber --repo "$GITHUB_REPOSITORY"
+          shasum -a 256 "$zip"
