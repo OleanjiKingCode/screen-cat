@@ -51,7 +51,7 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           app="$GITHUB_WORKSPACE/mac/ScreenCat.app"
-          for f in Cat_Sprite_Sheet.png Cat_Shadow.png Cat_Ball.png CREDIT.txt; do
+          for f in Cat_Sprite_Sheet.png Cat_Shadow.png Cat_Ball.png Dog_Sprite_Sheet.png Dog_Ball.png AppIcon.icns CREDIT.txt; do
             test -s "$app/Contents/Resources/$f" || { echo "missing from the app: $f"; exit 1; }
           done
           "$app/Contents/MacOS/ScreenCat" --preview "$GITHUB_WORKSPACE/mac/preview.png"
