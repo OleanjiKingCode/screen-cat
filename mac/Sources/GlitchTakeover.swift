@@ -346,8 +346,8 @@ private func codeWall(_ r: CGRect, _ t: CGFloat, _ pal: [NSColor], _ seed: UInt3
 
 /// Pixel-font text, fitted to `maxWidth`. Returns the pixel size used.
 @discardableResult
-private func pixelText(_ text: String, centre: CGPoint, maxWidth: CGFloat, maxPixel: CGFloat,
-                       colour: NSColor, ctx: CGContext, box: Bool = false) -> CGFloat {
+func pixelText(_ text: String, centre: CGPoint, maxWidth: CGFloat, maxPixel: CGFloat,
+               colour: NSColor, ctx: CGContext, box: Bool = false) -> CGFloat {
     let w = CGFloat(PixelFont.width(of: text))
     let p = max(2, min(maxPixel, floor(maxWidth / max(1, w))))
     let width = w * p, height = CGFloat(PixelFont.height) * p
@@ -751,8 +751,9 @@ private func tiled(_ r: CGRect, _ t: CGFloat, _ pal: [NSColor], _ word: String, 
 
 // MARK: - The view
 
-/// A layer-backed view that shows the takeover over one screen. It sits under
-/// the cat's view, so the cat's own 60 fps redraws never repaint it.
+/// A layer-backed view that shows the takeover over one screen, or one crawler
+/// breach over its window. It sits under the cat's view, so the cat's own
+/// 60 fps redraws never repaint it.
 final class TakeoverView: NSView {
     private var image: CGImage?
     private var shownOpacity: Float = 0
@@ -792,6 +793,14 @@ final class TakeoverView: NSView {
                        pulse: pulse, ctx: ctx)
         NSGraphicsContext.restoreGraphicsState()
         image = ctx.makeImage()
+        needsDisplay = true
+    }
+
+    /// Shows a frame rendered elsewhere: a crawler breach, at its window.
+    func show(frame: CGImage?, opacity: CGFloat) {
+        guard frame !== image || Float(opacity) != shownOpacity else { return }
+        image = frame
+        shownOpacity = Float(opacity)
         needsDisplay = true
     }
 

@@ -104,13 +104,14 @@ func renderPreviewSheet(to path: String) {
     }
 }
 
-/// `--glitches <path.png>`: every crawler glitch style side by side, part way
-/// through, each in a different colour.
+/// `--glitches <path.png>`: every takeover look as a crawler breach on a small
+/// pretend window, two seconds in, then one of them rebooting.
 func renderGlitchSheet(to path: String) {
-    let cell = CGSize(width: 420, height: 300)
-    let styles = GlitchStyle.allCases
-    let board = CGSize(width: cell.width * CGFloat(styles.count) + 20 * CGFloat(styles.count + 1),
-                       height: cell.height + 40)
+    let cell = CGSize(width: 300, height: 200)
+    let cols = 10
+    let count = glitchRecipes.count + 1
+    let rowsCount = (count + cols - 1) / cols
+    let board = CGSize(width: (cell.width + 12) * CGFloat(cols) + 12, height: (cell.height + 34) * CGFloat(rowsCount) + 12)
     guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(board.width),
                                      pixelsHigh: Int(board.height), bitsPerSample: 8, samplesPerPixel: 4,
                                      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
@@ -120,14 +121,22 @@ func renderGlitchSheet(to path: String) {
     NSGraphicsContext.current = gctx
     NSColor(srgbRed: 0.85, green: 0.87, blue: 0.9, alpha: 1).setFill()
     NSBezierPath(rect: CGRect(origin: .zero, size: board)).fill()
-    for (i, style) in styles.enumerated() {
-        let r = CGRect(x: 20 + CGFloat(i) * (cell.width + 20), y: 20, width: cell.width, height: cell.height)
+    for i in 0..<count {
+        let col = i % cols, row = i / cols
+        let r = CGRect(x: 12 + CGFloat(col) * (cell.width + 12),
+                       y: board.height - CGFloat(row + 1) * (cell.height + 34) + 22,
+                       width: cell.width, height: cell.height)
         NSColor.white.setFill()
         NSBezierPath(roundedRect: r, xRadius: 8, yRadius: 8).fill()
-        var b = Breach(rect: r, touch: CGPoint(x: r.midX, y: r.minY + 30), seed: UInt32(1234 + i * 77),
-                       style: style, accentIndex: i)
-        b.age = 2.0
+        // The last cell reboots a look with its own big banner, the hardest case.
+        let rebooting = i == glitchRecipes.count
+        let index = rebooting ? glitchRecipes.firstIndex { $0.name == "Red Alert" } ?? 0 : i
+        var b = Breach(rect: r, seed: UInt32(1234 + i * 77), recipeIndex: index)
+        b.age = rebooting ? b.duration - 0.8 : 2
         drawBreach(b, in: gctx.cgContext)
+        let label = "\(index + 1). \(glitchRecipes[index].name)" + (rebooting ? ", rebooting" : "")
+        NSString(string: label).draw(at: CGPoint(x: r.minX + 2, y: r.minY - 18),
+            withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.black])
     }
     NSGraphicsContext.restoreGraphicsState()
     if let data = rep.representation(using: .png, properties: [:]) {

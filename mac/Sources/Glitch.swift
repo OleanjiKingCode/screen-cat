@@ -4,22 +4,7 @@ import AppKit
 // overlay: the app underneath is never touched, it only looks broken for a few
 // seconds and then "reboots".
 
-/// The look of one breach. Picked at random each time, so a long crawl does
-/// not repeat itself.
-enum GlitchStyle: CaseIterable {
-    /// Cracks, RGB slices, scrolling hacker code, "SYSTEM BREACHED".
-    case breach
-    /// Columns of falling characters.
-    case matrix
-    /// A crash screen: ":(", "CAT.EXE HAS STOPPED" and a counting percentage.
-    case blueScreen
-    /// TV static, colour bars and "NO SIGNAL".
-    case noSignal
-    /// The window melts down in drips of colour.
-    case melt
-}
-
-/// The colours a breach can come in.
+/// The colours a bolt or an aura can come in.
 let glitchAccents: [NSColor] = [
     NSColor(srgbRed: 0.0, green: 1.0, blue: 0.25, alpha: 1),    // terminal green
     NSColor(srgbRed: 1.0, green: 0.0, blue: 0.2, alpha: 1),     // blood red
@@ -29,29 +14,41 @@ let glitchAccents: [NSColor] = [
     NSColor(srgbRed: 0.71, green: 1.0, blue: 0.23, alpha: 1),   // acid green
 ]
 
-private let alarmRed = NSColor(srgbRed: 1.0, green: 0.23, blue: 0.36, alpha: 1)
+/// The `glitchAccents` entry closest to `colour`, so the bolt that breaks a
+/// window is the colour of the look it starts.
+func accentIndex(nearest colour: NSColor) -> Int {
+    let target = colour.usingColorSpace(.sRGB) ?? colour
+    func distance(_ index: Int) -> CGFloat {
+        let c = glitchAccents[index].usingColorSpace(.sRGB) ?? glitchAccents[index]
+        return pow(c.redComponent - target.redComponent, 2) + pow(c.greenComponent - target.greenComponent, 2)
+            + pow(c.blueComponent - target.blueComponent, 2)
+    }
+    return glitchAccents.indices.min { distance($0) < distance($1) } ?? 0
+}
 
-/// One window the cat has broken, in the same coordinates as the cat.
+/// One window the cat has broken, in the same coordinates as the cat. It plays
+/// one of the fifty full-screen looks (`glitchRecipes`), cut to the window.
 struct Breach {
     var rect: CGRect
-    /// Where the zap landed. The cracks spread out from here.
-    var touch: CGPoint
     var seed: UInt32
-    var style: GlitchStyle = .breach
-    /// Index into `glitchAccents`.
-    var accentIndex = 0
+    /// Index into `glitchRecipes`.
+    var recipeIndex: Int
     var age: CGFloat = 0
-    let duration: CGFloat = 4.2
+    let duration: CGFloat = 5
+    /// The end of it: the look goes dark behind "REBOOTING..." and fades out.
+    let rebootSeconds: CGFloat = 1.1
+    /// The latest rendered frame, shared by every copy of this breach.
+    let frames = BreachFrames()
 
     var finished: Bool { age >= duration }
-    var accent: NSColor { glitchAccents[accentIndex % glitchAccents.count] }
-
-    /// A breach in a random style and colour.
-    static func random(rect: CGRect, touch: CGPoint) -> Breach {
-        Breach(rect: rect, touch: touch, seed: UInt32.random(in: 1...UInt32.max),
-               style: GlitchStyle.allCases.randomElement()!,
-               accentIndex: Int.random(in: 0..<glitchAccents.count))
-    }
+    var recipe: GlitchRecipe { glitchRecipes[recipeIndex % glitchRecipes.count] }
+    /// The look's main colour, for the border and "REBOOTING...".
+    var accent: NSColor { recipe.palette[0] }
+    /// Fades in over a quarter second and out over the last 0.6 s.
+    var opacity: CGFloat { min(1, age / 0.25) * min(1, max(0, (duration - age) / 0.6)) }
+    /// Seconds into the look. It runs at double speed, the idle crawl's
+    /// default `glitchSpeed`, so even a short breach shows the look move.
+    var lookTime: CGFloat { age * 2 }
 }
 
 /// Anything that has breaches and a zap to paint: both crawl routines.
@@ -139,326 +136,114 @@ struct GlitchRandom {
     mutating func range(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * unit() }
 }
 
-/// Fictional, harmless "hacker" lines for the scrolling code.
-private let fakeCode = [
-    "> connecting to 185.220.101.47:22 ...",
-    "$ nmap -sS -p- 10.0.0.0/24 --open",
-    "PORT     STATE SERVICE",
-    "22/tcp   open  ssh",
-    "443/tcp  open  https",
-    "$ ssh -i id_rsa root@10.0.0.14",
-    "Permission denied (publickey).",
-    "$ hydra -l admin -P rockyou.txt ssh://10.0.0.14",
-    "[22][ssh] login: admin  password: ********",
-    "bypassing firewall ... rule 0x1F dropped",
-    "decrypt(0x3F2A9C) -> ok",
-    "dumping /etc/shadow ...",
-    "root:$6$Zx9Q...:19622:0:99999:7:::",
-    "privilege escalation: CVE-20XX-0000 ... ok",
-    "uid=0(root) gid=0(root)",
-    "$ curl -s http://10.0.0.14/admin.php?id=1' OR '1'='1",
-    "injecting payload stage2.bin (48 KB)",
-    "spawning reverse shell -> 185.220.101.47:4444",
-    "keylogger attached to pid 4127",
-    "exfiltrating /Users/*/Documents (2.3 GB)",
-    "wiping logs: /var/log/*.log",
-    "kernel: segfault at 0x00007ffd in libsystem",
-    "ERROR 0xDEAD: process not responding",
-    "rerouting traffic through 7 proxies",
-    "hash cracked: 5f4dcc3b5aa765d61d8327deb882cf99",
-    "AES-256 key found: 9b2e...c41f",
-    "mounting /dev/disk2s1 /mnt/target",
-    "GET /api/v1/users  200 OK",
-    "0101 1100 0011 1010 1110",
-    "establishing persistence: launchd.plist",
-]
+/// The latest frame of one breach. A look renders at most 20 times a second,
+/// however often it is shown, like the full-screen takeover.
+final class BreachFrames {
+    private(set) var image: CGImage?
+    private var renderedAt: CGFloat = 0
 
-/// Paints a breach in its style. Every style fades in, darkens the window,
-/// does its thing, then shows "REBOOTING..." and fades back to the real app.
-func drawBreach(_ b: Breach, in ctx: CGContext) {
-    let fadeIn = min(1, b.age / 0.25)
-    let fadeOut = min(1, max(0, (b.duration - b.age) / 0.6))
-    let envelope = fadeIn * fadeOut
-    guard envelope > 0.01 else { return }
-    let r = b.rect
-    var flicker = GlitchRandom(b.seed &+ UInt32(b.age / 0.07))
+    /// Seconds since the frame shown was rendered; infinite before the first.
+    func staleness(_ b: Breach) -> CGFloat { image == nil ? .infinity : abs(b.age - renderedAt) }
 
-    ctx.saveGState()
-    ctx.setAlpha(envelope)
-    ctx.clip(to: r)
+    /// True once the frame shown is a twentieth of a second old.
+    func isStale(_ b: Breach) -> Bool { staleness(b) >= 0.045 }
 
-    // Falling code only reads against near black.
-    NSColor(white: 0, alpha: b.style == .matrix ? 0.88 : 0.55).setFill()
-    r.fill()
-
-    switch b.style {
-    case .breach:
-        drawScanlines(r)
-        drawSlices(r, flicker: &flicker)
-        drawCracks(b, in: ctx)
-        drawCode(b, in: r)
-        drawBanner(b, in: r, flicker: &flicker, ctx: ctx,
-                   options: ["SYSTEM BREACHED", "HACKED!"], colour: alarmRed)
-    case .matrix:
-        drawMatrix(b, in: r, ctx: ctx)
-        drawBanner(b, in: r, flicker: &flicker, ctx: ctx,
-                   options: ["ACCESS GRANTED", "ACCESS OK"], colour: b.accent)
-    case .blueScreen:
-        drawBlueScreen(b, in: r, ctx: ctx)
-        drawBanner(b, in: r, flicker: &flicker, ctx: ctx, options: [], colour: b.accent)
-    case .noSignal:
-        drawNoSignal(b, in: r, flicker: &flicker)
-        drawBanner(b, in: r, flicker: &flicker, ctx: ctx,
-                   options: ["NO SIGNAL", "NO SIGNAL"], colour: b.accent)
-    case .melt:
-        drawMelt(b, in: r)
-        drawScanlines(r)
-        drawBanner(b, in: r, flicker: &flicker, ctx: ctx,
-                   options: ["MELTDOWN", "MELT"], colour: b.accent)
+    func render(_ b: Breach) {
+        image = renderBreachFrame(b)
+        renderedAt = b.age
     }
 
-    // A flickering border, like a target lock.
+    /// The frame for `b`, rendered again only when it is stale.
+    func current(_ b: Breach) -> CGImage? {
+        if isStale(b) { render(b) }
+        return image
+    }
+}
+
+/// How many times the window's size a look is laid out at. The looks are made
+/// for a whole screen, so in a small window they are laid out bigger and shrunk
+/// to fit, instead of their text and boxes spilling off the edge. Whole powers
+/// of two, so the chunky pixels stay square on the screen.
+private func breachLayout(_ size: CGSize) -> CGFloat {
+    let side = min(size.width, size.height)
+    return side >= 400 ? 1 : side >= 200 ? 2 : 4
+}
+
+/// One frame of a breach, the window's shape: the look at half resolution, laid
+/// out at `breachLayout` times the window's size, then a flickering border and,
+/// at the end, "REBOOTING...".
+func renderBreachFrame(_ b: Breach) -> CGImage? {
+    let layout = breachLayout(b.rect.size)
+    let look = CGRect(x: 0, y: 0, width: b.rect.width * layout, height: b.rect.height * layout)
+    let w = Int((look.width / 2).rounded(.up)), h = Int((look.height / 2).rounded(.up))
+    guard w > 0, h > 0,
+          let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                              space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    ctx.scaleBy(x: 0.5, y: 0.5)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+    // The zap lands with a flash.
+    renderTakeover(b.recipe, in: look, time: b.lookTime, seed: b.seed, pulse: max(0, 1 - b.age / 0.4), ctx: ctx)
+    drawBorderAndReboot(b, in: look, layout: layout, ctx: ctx)
+    NSGraphicsContext.restoreGraphicsState()
+    return ctx.makeImage()
+}
+
+/// A flickering border, like a target lock. At the end the look goes dark
+/// behind a boxed "REBOOTING..." before the real window comes back.
+private func drawBorderAndReboot(_ b: Breach, in r: CGRect, layout: CGFloat, ctx: CGContext) {
+    var flicker = GlitchRandom(b.seed &+ UInt32(b.age / 0.07))
+    let rebooting = b.age - (b.duration - b.rebootSeconds)
+    if rebooting > 0 {
+        // Dark enough that the look's own banner does not fight this one.
+        NSColor(white: 0, alpha: min(0.88, rebooting / 0.4)).setFill()
+        r.fill()
+        // The long wording when it fits at a readable size, else a short one.
+        let maxWidth = r.width * 0.6
+        let text = CGFloat(PixelFont.width(of: "REBOOTING...")) * 4 <= maxWidth ? "REBOOTING..." : "REBOOT"
+        pixelText(text, centre: CGPoint(x: r.midX, y: r.midY), maxWidth: maxWidth, maxPixel: 5 * layout,
+                  colour: b.accent, ctx: ctx, box: true)
+    }
     b.accent.withAlphaComponent(flicker.range(0.5, 1)).setStroke()
-    let border = NSBezierPath(rect: r.insetBy(dx: 1.5, dy: 1.5))
-    border.lineWidth = 3
+    let border = NSBezierPath(rect: r.insetBy(dx: 1.5 * layout, dy: 1.5 * layout))
+    border.lineWidth = 3 * layout
     border.stroke()
+}
+
+/// Paints a breach straight into `ctx` from its latest frame, for the
+/// playground and the offscreen renders. The app itself shows the same frames
+/// on their own layers under the cat, so its 60 fps redraw never covers them.
+func drawBreach(_ b: Breach, in ctx: CGContext) {
+    guard b.opacity > 0.01, let image = b.frames.current(b) else { return }
+    ctx.saveGState()
+    ctx.setAlpha(b.opacity)
+    ctx.interpolationQuality = .none
+    ctx.draw(image, in: b.rect)
     ctx.restoreGState()
 }
 
-private func drawScanlines(_ r: CGRect) {
-    NSColor(white: 0, alpha: 0.3).setFill()
-    var y = r.minY
-    while y < r.maxY {
-        CGRect(x: r.minX, y: y, width: r.width, height: 1).fill()
-        y += 4
-    }
-}
-
-/// Sliced, shifted bars in the two halves of an RGB split.
-private func drawSlices(_ r: CGRect, flicker: inout GlitchRandom) {
-    let tints = [NSColor(srgbRed: 1, green: 0, blue: 0.2, alpha: 0.3),
-                 NSColor(srgbRed: 0, green: 1, blue: 0.25, alpha: 0.28),
-                 NSColor(white: 1, alpha: 0.12)]
-    for i in 0..<10 {
-        tints[i % tints.count].setFill()
-        let h = flicker.range(3, 24)
-        CGRect(x: r.minX + flicker.range(-50, 50), y: flicker.range(r.minY, r.maxY - h),
-               width: r.width * flicker.range(0.3, 1.05), height: h).fill()
-    }
-}
-
-/// Jagged cracks from the touch point. Their shape comes from the seed alone,
-/// so they grow without wobbling.
-private func drawCracks(_ b: Breach, in ctx: CGContext) {
-    let grow = min(1, max(0, (b.age - 0.15) / 0.9))
-    let eased = 1 - pow(1 - grow, 3)
-    guard eased > 0 else { return }
-    let reach = max(b.rect.width, b.rect.height) * 0.55 * eased
-    var shape = GlitchRandom(b.seed)
-    let base = shape.range(0, .pi * 2)
-    let count = 7
-    for k in 0..<count {
-        let path = NSBezierPath()
-        path.move(to: b.touch)
-        var angle = base + CGFloat(k) * .pi * 2 / CGFloat(count) + shape.range(-0.3, 0.3)
-        var point = b.touch
-        let segments = 7
-        for _ in 0..<segments {
-            angle += shape.range(-0.5, 0.5)
-            let step = reach / CGFloat(segments) * shape.range(0.6, 1.3)
-            point = CGPoint(x: point.x + cos(angle) * step, y: point.y + sin(angle) * step)
-            path.line(to: point)
-        }
-        path.lineJoinStyle = .miter
-        NSColor(white: 0, alpha: 0.7).setStroke()
-        path.lineWidth = 3.5
-        path.stroke()
-        NSColor(white: 1, alpha: 0.9).setStroke()
-        path.lineWidth = 1.2
-        path.stroke()
-    }
-}
-
-/// Code scrolling up the left side, newest line at the bottom, typed out.
-private func drawCode(_ b: Breach, in r: CGRect) {
-    let lineHeight: CGFloat = 15
-    let rows = Int((r.height - 20) / lineHeight)
-    guard rows > 0, b.age > 0.3 else { return }
-    let typed = (b.age - 0.3) * 11
-    let shown = min(rows, Int(typed) + 1)
-    let first = Int(b.seed % UInt32(fakeCode.count))
-    let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
-    for row in 0..<shown {
-        let index = Int(typed) - row
-        var text = fakeCode[(first + max(0, index)) % fakeCode.count]
-        if row == 0 {
-            // The newest line types itself out, cursor and all.
-            let chars = Int((typed - floor(typed)) * CGFloat(text.count))
-            text = String(text.prefix(chars)) + "_"
-        }
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: b.accent.withAlphaComponent(row == 0 ? 1 : max(0.35, 0.95 - CGFloat(row) * 0.03)),
-        ]
-        NSString(string: text).draw(at: CGPoint(x: r.minX + 14, y: r.minY + 10 + CGFloat(row) * lineHeight),
-                                    withAttributes: attrs)
-    }
-}
-
-/// Glyph images rendered once per character and colour, because drawing a
-/// screenful of text through NSString every frame is far too slow.
-private enum GlyphCache {
-    static var images: [String: CGImage] = [:]
-    static let font = NSFont.monospacedSystemFont(ofSize: 14, weight: .bold)
-
-    static func image(_ ch: Character, colour: NSColor, key: Int) -> CGImage? {
-        let id = "\(ch)|\(key)"
-        if let hit = images[id] { return hit }
-        let text = NSString(string: String(ch))
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: colour]
-        let size = CGSize(width: 14, height: 18)
-        let image = NSImage(size: size, flipped: false) { _ in
-            text.draw(at: CGPoint(x: 2, y: 1), withAttributes: attrs)
-            return true
-        }
-        let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        images[id] = cg
-        return cg
-    }
-}
-
-private let rainGlyphs = Array("01アイウエオカキクケコサシスセソタチツテト$#@*<>=+ABCDEFXYZ")
-
-/// Columns of falling characters, bright at the head and fading up the trail.
-private func drawMatrix(_ b: Breach, in r: CGRect, ctx: CGContext) {
-    let colW = max(16, r.width / 60)
-    let rowH: CGFloat = 18
-    let cols = Int(r.width / colW)
-    var columnRandom = GlitchRandom(b.seed)
-    let charTick = UInt32(b.age / 0.09)
-    for c in 0..<cols {
-        let speed = columnRandom.range(140, 420)
-        let start = columnRandom.range(0, r.height)
-        let trail = Int(columnRandom.range(5, 13))
-        let span = r.height + CGFloat(trail) * rowH
-        let headY = r.maxY - (b.age * speed + start).truncatingRemainder(dividingBy: span)
-        var chars = GlitchRandom(b.seed &+ UInt32(c) &* 977 &+ charTick)
-        let x = r.minX + CGFloat(c) * colW
-        for k in 0..<trail {
-            let y = headY + CGFloat(k) * rowH
-            guard y > r.minY - rowH, y < r.maxY else { continue }
-            let ch = rainGlyphs[Int(chars.unit() * CGFloat(rainGlyphs.count - 1))]
-            let isHead = k == 0
-            guard let img = GlyphCache.image(ch, colour: isHead ? .white : b.accent,
-                                             key: isHead ? -1 : b.accentIndex) else { continue }
-            ctx.saveGState()
-            ctx.setAlpha(isHead ? 1 : max(0.15, 1 - CGFloat(k) / CGFloat(trail)))
-            ctx.draw(img, in: CGRect(x: x, y: y, width: 14, height: 18))
-            ctx.restoreGState()
-        }
-    }
-}
-
-/// A pixel-font crash screen that counts its way up to "100%".
-private func drawBlueScreen(_ b: Breach, in r: CGRect, ctx: CGContext) {
-    NSColor(srgbRed: 0.08, green: 0.33, blue: 0.82, alpha: 1).setFill()
-    r.fill()
-    let percent = min(100, Int(max(0, b.age - 0.4) / 2.6 * 100))
-    let lines = ["SYSTEM HALTED", "STOP CODE: 0XC000021A", "DUMPING MEMORY \(percent)%"]
-    let widest = CGFloat(lines.map { PixelFont.width(of: $0) }.max() ?? 1)
-    let pixel = max(2, min(6, floor(r.width * 0.8 / widest)))
-    let left = r.minX + max(12, r.width * 0.08)
-    var y = r.maxY - max(20, r.height * 0.18)
-    let face = pixel * 3
-    y -= CGFloat(PixelFont.height) * face
-    PixelFont.draw(":(", at: CGPoint(x: left, y: y), pixel: face, color: .white, in: ctx)
-    y -= pixel * 6
-    for line in lines {
-        y -= CGFloat(PixelFont.height) * pixel + pixel * 3
-        guard y > r.minY + 6, CGFloat(PixelFont.width(of: line)) * pixel < r.width - 12 else { continue }
-        PixelFont.draw(line, at: CGPoint(x: left, y: y), pixel: pixel, color: .white, in: ctx)
-    }
-}
-
-/// TV static with a band of colour bars and a rolling bright bar.
-private func drawNoSignal(_ b: Breach, in r: CGRect, flicker: inout GlitchRandom) {
-    let block = max(10, r.width / 70)
-    var y = r.minY
-    while y < r.maxY {
-        var x = r.minX
-        while x < r.maxX {
-            if flicker.unit() < 0.45 {
-                NSColor(white: flicker.range(0.15, 0.9), alpha: 0.85).setFill()
-                CGRect(x: x, y: y, width: block, height: block).fill()
+/// `--takeover-bench`, second part: milliseconds per frame for each look as a
+/// breach on a few window sizes. The app renders at most one breach a frame.
+func benchBreaches() {
+    let windows = [CGSize(width: 1100, height: 720), CGSize(width: 640, height: 420), CGSize(width: 300, height: 220)]
+    for size in windows {
+        var worst: (String, Double) = ("", 0)
+        var total: Double = 0
+        for i in glitchRecipes.indices {
+            var b = Breach(rect: CGRect(origin: .zero, size: size), seed: UInt32(i + 1), recipeIndex: i)
+            let start = CFAbsoluteTimeGetCurrent()
+            for frame in 0..<20 {
+                b.age = 1 + CGFloat(frame) * 0.05
+                _ = renderBreachFrame(b)
             }
-            x += block
+            let ms = (CFAbsoluteTimeGetCurrent() - start) / 20 * 1000
+            total += ms
+            if ms > worst.1 { worst = (glitchRecipes[i].name, ms) }
         }
-        y += block
+        print(String(format: "breach %4.0f x %3.0f: average %5.1f ms, slowest %@ %.1f ms", size.width, size.height,
+                     total / Double(glitchRecipes.count), worst.0 as NSString, worst.1))
     }
-    let bars: [NSColor] = [NSColor(white: 0.85, alpha: 1), glitchAccents[1], .black, glitchAccents[0],
-                           glitchAccents[2], NSColor(srgbRed: 0.55, green: 0, blue: 0, alpha: 1), .black]
-    let band = CGRect(x: r.minX, y: r.midY - r.height * 0.15, width: r.width, height: r.height * 0.3)
-    let barW = band.width / CGFloat(bars.count)
-    let shift = flicker.range(-12, 12)
-    for (i, colour) in bars.enumerated() {
-        colour.withAlphaComponent(0.85).setFill()
-        CGRect(x: band.minX + CGFloat(i) * barW + shift, y: band.minY, width: barW + 1, height: band.height).fill()
-    }
-    let roll = r.minY + (b.age * r.height * 0.6).truncatingRemainder(dividingBy: r.height)
-    NSColor(white: 1, alpha: 0.18).setFill()
-    CGRect(x: r.minX, y: roll, width: r.width, height: max(8, r.height * 0.05)).fill()
-}
-
-/// Drips of colour sliding down from the top edge, each at its own pace.
-private func drawMelt(_ b: Breach, in r: CGRect) {
-    let colW = max(8, r.width / 60)
-    let cols = Int(ceil(r.width / colW))
-    let progress = min(1, b.age / (b.duration - 1.2))
-    let eased = 1 - pow(1 - progress, 2)
-    var columns = GlitchRandom(b.seed)
-    let dark = b.accent.blended(withFraction: 0.45, of: .black) ?? b.accent
-    for c in 0..<cols {
-        let length = r.height * eased * columns.range(0.25, 1.05)
-        let x = r.minX + CGFloat(c) * colW
-        dark.withAlphaComponent(0.9).setFill()
-        CGRect(x: x, y: r.maxY - length, width: colW + 0.5, height: length).fill()
-        b.accent.setFill()
-        CGRect(x: x, y: r.maxY - length, width: colW + 0.5, height: min(length, colW * 0.6)).fill()
-        // A drop falling ahead of the drip now and then.
-        if columns.unit() < 0.3 {
-            let fall = (b.age * 260 * columns.range(0.6, 1.4)).truncatingRemainder(dividingBy: r.height)
-            b.accent.withAlphaComponent(0.8).setFill()
-            CGRect(x: x + colW * 0.25, y: r.maxY - length - fall, width: colW * 0.5, height: colW * 0.8).fill()
-        }
-    }
-}
-
-/// The style's banner in the pixel font, then "REBOOTING..." before it clears.
-/// Empty `options` shows only the rebooting part.
-private func drawBanner(_ b: Breach, in r: CGRect, flicker: inout GlitchRandom, ctx: CGContext,
-                        options: [String], colour: NSColor) {
-    let rebooting = b.age > b.duration - 1.1
-    guard b.age > 0.6 else { return }
-    if !rebooting && options.isEmpty { return }
-    // Blink on and off now and then, the way a warning does.
-    if !rebooting && flicker.unit() < 0.12 { return }
-    // The long wording when it fits at the smallest pixel size, else a short one.
-    let choices = rebooting ? ["REBOOTING...", "REBOOT"] : options
-    let text = choices.first { CGFloat(PixelFont.width(of: $0) + 6) * 2 <= r.width * 0.9 } ?? choices[choices.count - 1]
-    let tint = rebooting ? b.accent : colour
-    let widthPx = CGFloat(PixelFont.width(of: text))
-    let pixel = max(2, min(5, floor(r.width * 0.6 / widthPx)))
-    let w = widthPx * pixel, h = CGFloat(PixelFont.height) * pixel
-    let box = CGRect(x: r.midX - w / 2 - pixel * 3, y: r.midY - h / 2 - pixel * 3,
-                     width: w + pixel * 6, height: h + pixel * 6)
-    NSColor(white: 0, alpha: 0.85).setFill()
-    box.fill()
-    tint.setStroke()
-    let frame = NSBezierPath(rect: box.insetBy(dx: pixel / 2, dy: pixel / 2))
-    frame.lineWidth = pixel
-    frame.stroke()
-    PixelFont.draw(text, at: CGPoint(x: (r.midX - w / 2).rounded(), y: (r.midY - h / 2).rounded()),
-                   pixel: pixel, color: tint, in: ctx)
 }
 
 /// A jittery bolt from the cat to the window it is hacking.
