@@ -2,6 +2,7 @@ name: mac
 
 on:
   push:
+    branches: [main]
     paths:
       - "mac/**"
       - ".github/workflows/mac.yml"
@@ -26,14 +27,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # One binary for Apple silicon and Intel Macs, as release.sh builds it.
-      # A release takes its version from the tag (v1.2.0 -> 1.2.0).
-      - name: Build
+      # release.sh builds one binary for Apple silicon and Intel Macs and zips
+      # it as dist/ScreenCat-mac-<version>.zip. A release takes its version
+      # from the tag (v1.2.0 -> 1.2.0).
+      - name: Build and zip
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ -n "$TAG" ]; then export VERSION="${TAG#v}"; fi
-          UNIVERSAL=1 ./build.sh
+          ./release.sh
 
       - name: Check both chips are in the binary
         run: |
@@ -41,20 +43,25 @@ jobs:
           echo "$archs"
           [[ "$archs" == *arm64* && "$archs" == *x86_64* ]]
 
-      # Every clip on one sheet, drawn offscreen. Fails if the sprites do not
-      # load or draw.
+      # Every clip on one sheet, drawn offscreen. It runs from outside the
+      # repo, so the app must find its art in its own bundle, not in
+      # mac/Assets. Fails if an art file is missing from the app or no sheet
+      # is written.
       - name: Preview
-        run: ScreenCat.app/Contents/MacOS/ScreenCat --preview preview.png && test -s preview.png
-
-      # ditto keeps the bundle intact; no ._ files to break the signature.
-      - name: Zip
-        run: ditto -c -k --norsrc --noextattr --keepParent ScreenCat.app ScreenCat-mac.zip
+        working-directory: ${{ runner.temp }}
+        run: |
+          app="$GITHUB_WORKSPACE/mac/ScreenCat.app"
+          for f in Cat_Sprite_Sheet.png Cat_Shadow.png Cat_Ball.png CREDIT.txt; do
+            test -s "$app/Contents/Resources/$f" || { echo "missing from the app: $f"; exit 1; }
+          done
+          "$app/Contents/MacOS/ScreenCat" --preview "$GITHUB_WORKSPACE/mac/preview.png"
+          test -s "$GITHUB_WORKSPACE/mac/preview.png"
 
       - name: Upload app
         uses: actions/upload-artifact@v4
         with:
           name: ScreenCat-mac
-          path: mac/ScreenCat-mac.zip
+          path: mac/dist/*.zip
 
       - name: Upload preview
         if: always()
@@ -68,7 +75,7 @@ jobs:
   release:
     if: github.event_name == 'release'
     needs: build
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -82,7 +89,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
-          zip="ScreenCat-mac-${TAG#v}.zip"
-          mv out/ScreenCat-mac.zip "$zip"
-          gh release upload "$TAG" "$zip" --clobber --repo "$GITHUB_REPOSITORY"
-          shasum -a 256 "$zip"
+          gh release upload "$TAG" out/*.zip --clobber --repo "$GITHUB_REPOSITORY"
+          shasum -a 256 out/*.zip
