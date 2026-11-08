@@ -266,7 +266,8 @@ final class TrashWatch {
         let stem = item.original.deletingPathExtension().lastPathComponent
         // A plain folder is numbered after its whole name. A file, or a
         // bundle such as a .pages or .app, before its extension.
-        let numberWhole = ext.isEmpty || (item.isFolder && !NSWorkspace.shared.isFilePackage(atPath: item.inTrash.path))
+        let isPackage = (try? item.inTrash.resourceValues(forKeys: [.isPackageKey]).isPackage) ?? false
+        let numberWhole = ext.isEmpty || (item.isFolder && isPackage != true)
         var target = item.original
         var n = 2
         while fm.fileExists(atPath: target.path) {
@@ -274,13 +275,16 @@ final class TrashWatch {
             target = folder.appendingPathComponent(name, isDirectory: item.isFolder)
             n += 1
         }
+        // Looked at again just before the move: the checks above can wait on
+        // the macOS prompt for a while, and the Trash can change meanwhile.
+        let stillThere = (try? fm.attributesOfItem(atPath: item.inTrash.path)[.systemFileNumber] as? NSNumber)?.uint64Value
+        guard stillThere == item.fileID else { throw RescueMiss(why: "gone from the Trash, or something else is there now") }
         do {
             try fm.moveItem(at: item.inTrash, to: target)
             return target
         } catch {
             guard isNoAccess(error) else { throw RescueMiss(why: error.localizedDescription) }
-            throw RescueMiss(why: "no access to \(place(of: folder)), allow Screen Cat in System Settings > "
-                + "Privacy & Security > Files and Folders")
+            throw RescueMiss(why: noAccess(folder, error))
         }
     }
 
@@ -294,6 +298,19 @@ final class TrashWatch {
             return false
         }
         return under.code == Int(EPERM) || under.code == Int(EACCES)
+    }
+
+    /// Why a folder cannot be used, and the fix. Only the Desktop, Documents
+    /// and Downloads are behind the macOS privacy setting, and macOS says no
+    /// to those with EPERM. Anything else, such as a locked folder, is a
+    /// plain file permission (EACCES).
+    static func noAccess(_ folder: URL, _ error: Error? = nil) -> String {
+        let place = place(of: folder)
+        let posix = ((error as NSError?)?.userInfo[NSUnderlyingErrorKey] as? NSError)?.code
+        guard ["Desktop", "Documents", "Downloads"].contains(place), posix != Int(EACCES) else {
+            return "no permission to write to \((folder.path as NSString).abbreviatingWithTildeInPath)"
+        }
+        return "no access to \(place), allow Screen Cat in System Settings > Privacy & Security > Files and Folders"
     }
 
     /// The folder in your home that holds `folder`, such as Documents, as
@@ -891,7 +908,7 @@ func runRescueSelfTest(onDesktop: Bool, realFolders: Bool) -> Never {
         _ = try TrashWatch.restore(shutItem)
         fail("put back into a folder it may not write to")
     } catch let miss as RescueMiss {
-        guard miss.why.hasPrefix("no access") else { fail("wrong reason: \(miss.why)") }
+        guard miss.why.hasPrefix("no permission to write") else { fail("wrong reason: \(miss.why)") }
         print("  left in the Trash: \(miss.why)")
     } catch { fail("wrong error: \(error)") }
     guard fm.fileExists(atPath: shutItem.inTrash.path) else { fail("it is not in the Trash any more") }

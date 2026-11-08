@@ -711,8 +711,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         let wanted = TrashWatch.folders(scene.config.trashRescueFolders)
-        if trashWatch.isRunning && trashWatch.folders == wanted.folders { return }
         for line in wanted.skipped { ActivityLog.shared.cat("trash rescue: left out \(line)") }
+        if trashWatch.isRunning && trashWatch.folders == wanted.folders { return }
+        // Asked once now, off the main thread, so macOS shows its prompt for
+        // each protected folder at start rather than on the first throw, and
+        // file events from it reach the pet. A put-back waits behind this on
+        // the same queue. A folder you say no to stays watched; the log says
+        // why its things will stay in the Trash.
+        let folders = wanted.folders
+        restoreQueue.async {
+            let refused = folders.filter { (try? FileManager.default.contentsOfDirectory(atPath: $0.path)) == nil }
+            DispatchQueue.main.async {
+                for folder in refused { ActivityLog.shared.cat("trash rescue: \(TrashWatch.noAccess(folder))") }
+            }
+        }
         let names = wanted.folders.map { ($0.path as NSString).abbreviatingWithTildeInPath }.joined(separator: ", ")
         if trashWatch.start(wanted.folders) {
             ActivityLog.shared.cat("trash rescue on, watching \(names)")

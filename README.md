@@ -46,7 +46,7 @@
 And a few quieter things:
 
 - **Private by default.** The pet and its answer card stay out of screenshots, screen recordings and screen sharing, unless you tick **Show in screenshots & recordings**.
-- **Trash rescue.** Drag something from the Desktop, Documents or Downloads (or a folder inside them) to the Trash and the pet runs to the Trash, digs it out, carries it back on its back and tosses it home, where it really is again. Throw the same thing away again within ten minutes and it lets it go. Untick **Rescue things I trash** to stop it.
+- **Trash rescue.** Drag something from the Desktop, Documents or Downloads (or a folder inside them) to the Trash and the pet runs to the Trash, digs it out, carries it back on its back and tosses it home, where it really is again. It only does this for things you throw away in Finder, so a file your code editor deletes stays deleted. Throw the same thing away again within ten minutes and it lets it go. The first time, macOS asks once if Screen Cat may use each of those folders. Untick **Rescue things I trash** to stop it.
 - **Stays out of the way.** It hides while a video player (VLC, IINA, QuickTime, TV, Netflix, Plex, Infuse) is in front.
 - **Idle takeover.** Leave the Mac alone for half an hour and the pet grows and turns the screen into a glitch show. The first touch ends it and puts you back in your app.
 - **Stepped out.** One click keeps your Mac awake and the screen on, like `caffeinate`.

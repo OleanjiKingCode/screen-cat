@@ -283,10 +283,12 @@ stack and all come back, a folder before anything that was inside it.
   is busy with an answer card, a game you said yes to, or the idle crawl. A
   film that comes to the front mid-rescue sends the pet home. The item just
   stays in the Trash.
-- **Only from Finder.** It rescues what you throw away in Finder, by dragging
-  or with ⌘⌫. Files an editor or a script moves to the Trash (VS Code
-  deleting a file in a project, say) stay there, and the activity log says
-  which app threw them.
+- **Only from Finder.** It rescues only while Finder is the app in front, so
+  what you throw away by dragging or with ⌘⌫. Files an editor or a script
+  moves to the Trash while it is in front (VS Code deleting a file in a
+  project, say) stay there, and the activity log names the app that was in
+  front. It goes by the app in front, not by who moved the file, so a
+  background tool trashing something while Finder is in front still counts.
 - **Name taken.** If something new has the old name by then, it comes back
   as "name 2", the way Finder numbers copies.
 - **Only the watched folders.** The Desktop, Documents and Downloads by
@@ -304,12 +306,14 @@ FSEvents still reports both ends of the move, the path that went away and the
 Trash path that appeared, with the same file ID. Watching never looks inside
 the folders. Putting it back is a plain move of that one path.
 
-macOS protects the Desktop, Documents and Downloads, so the first time the pet
-puts something back into one of them, macOS may ask once whether Screen Cat
-may use that folder. The move runs off the main thread, so the pet does not
-wait for your answer. Say no, or turn it off later in **System Settings >
-Privacy & Security > Files and Folders**, and the item just stays in the
-Trash; the activity log says there is no access to that folder.
+macOS protects the Desktop, Documents and Downloads, so when the rescue starts
+the pet looks in each watched folder once, and macOS asks once whether Screen
+Cat may use each protected one. That is also what lets it hear about throws
+from there. It asks off the main thread, so the pet never waits. Say no, or
+turn it off later in **System Settings > Privacy & Security > Files and
+Folders**, and things thrown from that folder stay in the Trash; the activity
+log says there is no access to it. A folder outside those three that cannot be
+written gets a plain "no permission" line instead.
 
 Where the Trash and Finder are comes from the Dock's own settings (side, icon
 size and how many icons it shows), so the pet digs near the Trash, not always
@@ -527,7 +531,8 @@ them back, and deletes them again. Also checks that folders it cannot watch
 are left out, and that a move to another folder, watched or not, is not taken
 for a throw. Uses scratch folders, or the real Desktop with `desktop`.
 `folders` also throws scratch files from the real Documents and Downloads and
-from a folder inside each, and moves one from Documents to the Desktop. macOS
+from a folder inside each, and moves one from Documents to the Desktop, so it
+touches the real Desktop too. macOS
 protects those folders, so run `folders` from a terminal that already has
 access to them, or macOS asks. Everything it makes is deleted again, in every
 folder and in the Trash. Prints PASS or the first thing that failed.
