@@ -13,9 +13,11 @@ import CoreBluetooth
 final class ActivityLog: NSObject, CBCentralManagerDelegate {
     static let shared = ActivityLog()
 
-    /// Asked on every app switch. Returns a line about the cat, or nil when it
-    /// is not out.
+    /// Asked a second after an app or Space switch. Returns a line about the
+    /// cat, or nil when it is not out.
     var catStatus: (() -> String?)?
+    /// The pending ask, so a quick run of switches is reported once.
+    private var catCheck: DispatchWorkItem?
 
     private var started = false
     private var bluetooth: CBCentralManager?
@@ -43,6 +45,7 @@ final class ActivityLog: NSObject, CBCentralManagerDelegate {
         let ws = NSWorkspace.shared.notificationCenter
         let workspace: [(Notification.Name, Selector)] = [
             (NSWorkspace.didActivateApplicationNotification, #selector(appActivated(_:))),
+            (NSWorkspace.activeSpaceDidChangeNotification, #selector(spaceChanged)),
             (NSWorkspace.didLaunchApplicationNotification, #selector(appLaunched(_:))),
             (NSWorkspace.didTerminateApplicationNotification, #selector(appQuit(_:))),
             (NSWorkspace.willSleepNotification, #selector(willSleep)),
@@ -110,7 +113,21 @@ final class ActivityLog: NSObject, CBCentralManagerDelegate {
         if fullscreen(app) { line += "  [fullscreen]" }
         frontmost = (new, Date())
         write("APP", line)
-        if let cat = catStatus?() { write("CAT", cat) }
+        reportCatSoon()
+    }
+
+    @objc private func spaceChanged() { reportCatSoon() }
+
+    /// The cat line waits a second for the switch to settle. The app comes to
+    /// the front before its Space slides in, so asking at once described the
+    /// Space you were leaving.
+    private func reportCatSoon() {
+        catCheck?.cancel()
+        let check = DispatchWorkItem { [weak self] in
+            if let cat = self?.catStatus?() { self?.write("CAT", cat) }
+        }
+        catCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: check)
     }
 
     @objc private func appLaunched(_ note: Notification) {

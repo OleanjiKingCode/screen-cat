@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// cat then, so it stays in and the 60Hz timer does not run for nothing.
     private var away = false
     private var nextVisitAt: Date?
+    /// The pending check that the cat came along to the Space in front.
+    private var spaceCheck: DispatchWorkItem?
 
     // Petting: rest the pointer on the cat and it stops, sits and shows hearts.
     private var petDwell: CGFloat = 0
@@ -91,6 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                   NSStringFromRect(w.frame))
             NSLog("Screen Cat: SELFTEST: sharingType=%@  surface=%@",
                   sharing, String(describing: self.scene.surface))
+            NSLog("Screen Cat: SELFTEST: on screen here=%@ isOnActiveSpace=%@",
+                  isOnScreenNow(w) ? "yes" : "NO", w.isOnActiveSpace ? "yes" : "NO")
             NSLog("Screen Cat: SELFTEST: draw() called %d times, cat painted %d times",
                   self.view.drawCount, self.view.drewCatCount)
             exit(0)
@@ -140,6 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         for name in [NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
             ws.addObserver(self, selector: #selector(comeBack), name: name, object: nil)
+        }
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            ws.addObserver(self, selector: #selector(checkSpaceSoon), name: name, object: nil)
         }
         let dist = DistributedNotificationCenter.default()
         dist.addObserver(self, selector: #selector(goAway),
@@ -286,6 +293,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard away else { return }
         away = false
         if !paused { schedule(after: scene.config.firstAppearanceDelay) }
+    }
+
+    /// Half a second after an app or Space switch, so a quick run of switches
+    /// is checked once, after the slide has finished.
+    @objc private func checkSpaceSoon() {
+        spaceCheck?.cancel()
+        let check = DispatchWorkItem { [weak self] in self?.bringBackIfLeftBehind() }
+        spaceCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: check)
+    }
+
+    /// The cat and its card belong on whatever Space is in front. If the
+    /// window server says one of them is not on it, ordering it front puts it
+    /// back on every Space, this one included.
+    private func bringBackIfLeftBehind() {
+        if behavior != nil, !isOnScreenNow(window) {
+            window.orderFrontRegardless()
+            ActivityLog.shared.cat("was not on this Space, brought it back")
+        }
+        if let panel = answerPanel, panel.isVisible, !isOnScreenNow(panel) {
+            panel.orderFrontRegardless()
+            ActivityLog.shared.cat("answer card was not on this Space, brought it back")
+        }
     }
 
     // MARK: - Menu bar
@@ -887,13 +917,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return picked.shuffled().prefix(4).map { $0.applying(toLocal) }
     }
 
-    /// For the activity log on every app switch: is the cat out, and is its
-    /// window really on the Space you are looking at? A "no" here names an app
-    /// the cat failed to show over.
+    /// For the activity log, a second after an app or Space switch: is the cat
+    /// out, and does the window server list it on screen on the Space in
+    /// front? A "NO" here names an app the cat failed to show over.
+    /// `isOnActiveSpace` is kept beside it to see how often it disagrees.
     private func catReport() -> String? {
         guard behavior != nil else { return nil }
-        let space = window.isOnActiveSpace ? "yes" : "NO"
-        return "out on the \(scene.surface); window on this Space: \(space), visible: \(window.isVisible ? "yes" : "NO"), level \(window.level.rawValue)"
+        let here = isOnScreenNow(window) ? "yes" : "NO"
+        let flag = window.isOnActiveSpace ? "yes" : "NO"
+        return "out on the \(scene.surface); on screen here: \(here), isOnActiveSpace: \(flag), level \(window.level.rawValue)"
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
