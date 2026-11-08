@@ -71,8 +71,8 @@ final class Asker {
         }
     }
 
-    /// A spare older than this is swapped for a new one when asked, in case
-    /// the login it started with has gone stale.
+    /// A spare older than this is swapped for a new one, in case the login
+    /// it started with has gone stale.
     static let spareLifetime: TimeInterval = 30 * 60
 
     static let systemPrompt = """
@@ -511,12 +511,12 @@ struct APIStream {
 struct CLIStream {
     private var events = MessageEvents()
 
+    /// The tool retries an API error itself and reports the outcome in its
+    /// "result" line, so an error event here does not end the answer.
     mutating func feed<Bytes: DataProtocol>(_ line: Bytes) -> StreamStep? {
         guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
               obj["type"] as? String == "stream_event",
               let event = obj["event"] as? [String: Any],
-              // The tool retries an API error itself and reports the outcome
-              // in its "result" line, so an error here does not end the answer.
               event["type"] as? String != "error" else { return nil }
         return events.handle(event)
     }
