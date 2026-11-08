@@ -284,8 +284,42 @@ final class TrashWatch {
             return target
         } catch {
             guard isNoAccess(error) else { throw RescueMiss(why: error.localizedDescription) }
+            // A file some app opened for you (a film opened in VLC, say)
+            // carries a label that lets only that app and Finder move it, and
+            // macOS says EPERM. Finder can, so it is asked to. Not for a plain
+            // locked folder (EACCES): Finder would ask for a password.
+            let posix = ((error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError)?.code
+            if posix == Int(EPERM), moveWithFinder(item.inTrash, to: target) { return target }
             throw RescueMiss(why: noAccess(folder, error))
         }
+    }
+
+    /// Moves an item with Finder, through `osascript`, and gives it the
+    /// target's name. macOS asks once whether Screen Cat may control Finder.
+    /// True when the item is at `target` afterwards.
+    private static func moveWithFinder(_ from: URL, to target: URL) -> Bool {
+        let rename = target.lastPathComponent == from.lastPathComponent ? "" : target.lastPathComponent
+        let script = [
+            "on run argv",
+            "tell application \"Finder\"",
+            "set moved to move (POSIX file (item 1 of argv) as alias) to (POSIX file (item 2 of argv) as alias)",
+            "if (item 3 of argv) is not \"\" then set name of moved to (item 3 of argv)",
+            "end tell",
+            "end run",
+        ]
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = script.flatMap { ["-e", $0] }
+            + [from.path, target.deletingLastPathComponent().path, rename]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do {
+            try p.run()
+        } catch {
+            return false
+        }
+        p.waitUntilExit()
+        return p.terminationStatus == 0 && FileManager.default.fileExists(atPath: target.path)
     }
 
     /// macOS said no: no permission to write there.

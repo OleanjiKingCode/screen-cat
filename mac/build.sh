@@ -48,6 +48,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSBluetoothAlwaysUsageDescription</key><string>Screen Cat writes whether Bluetooth is on or off in its local activity log.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Screen Cat asks Finder to put back a file you threw away when macOS lets only Finder move it.</string>
 </dict>
 </plist>
 PLIST
