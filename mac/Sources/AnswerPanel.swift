@@ -317,7 +317,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
             stopThinking()
             setStatus(.writing)
         }
-        setBody(answerText(text))
+        setBody(answerText(text), followEnd: true)
     }
 
     /// The answer. It stays up until you close it, however long you read.
@@ -486,7 +486,9 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         return best
     }
 
-    private func setBody(_ text: NSAttributedString) {
+    /// `followEnd` keeps the newest words in view while an answer is still
+    /// being written and is taller than the card. Otherwise it shows the top.
+    private func setBody(_ text: NSAttributedString, followEnd: Bool = false) {
         textView.textStorage?.setAttributedString(text)
         let width = Self.width - Self.side * 2
         textView.frame = CGRect(x: 0, y: 0, width: width, height: 10)
@@ -495,8 +497,12 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         layout.ensureLayout(for: container)
         let used = ceil(layout.usedRect(for: container).height)
         textView.frame.size.height = max(used, 18)
-        textView.scroll(.zero)
         resize(bodyHeight: min(Self.maxTextHeight, max(18, used)))
+        if followEnd {
+            textView.scrollToEndOfDocument(nil)
+        } else {
+            textView.scroll(.zero)
+        }
     }
 
     /// The field shows under an answer, not while one is on its way. Once

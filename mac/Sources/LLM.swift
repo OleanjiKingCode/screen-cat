@@ -64,11 +64,16 @@ final class Asker {
         /// The tool, model and effort it was started with.
         let key: String
         let born: Date
+
+        /// Started with these settings, still running, and not too old.
+        func isFresh(for key: String) -> Bool {
+            self.key == key && process.isRunning && Date().timeIntervalSince(born) < Asker.spareLifetime
+        }
     }
 
     /// A spare older than this is swapped for a new one when asked, in case
     /// the login it started with has gone stale.
-    private static let spareLifetime: TimeInterval = 30 * 60
+    static let spareLifetime: TimeInterval = 30 * 60
 
     static let systemPrompt = """
     You are the brain of Screen Cat, a desktop pet cat. The user just copied some text or took \
@@ -116,6 +121,8 @@ final class Asker {
         process = nil
         apiJob?.cancel()
         apiJob = nil
+        // The question that was cut off took the spare, so start the next one.
+        if let warm = warmConfig { prewarm(warm) }
     }
 
     /// Has a `claude` ready for the next question, started with these
@@ -127,11 +134,17 @@ final class Asker {
             dropSpare()
             return
         }
-        let key = Self.spareKey(exe, config)
-        if let spare, spare.key == key, spare.process.isRunning,
-           Date().timeIntervalSince(spare.born) < Self.spareLifetime { return }
+        if let spare, spare.isFresh(for: Self.spareKey(exe, config)) { return }
         dropSpare()
-        spare = Self.launch(exe, config)
+        let fresh = Self.launch(exe, config)
+        spare = fresh
+        // Swapped for a new one once it is too old, so a question after a
+        // long quiet spell does not start cold.
+        guard let born = fresh?.born else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.spareLifetime + 1) { [weak self] in
+            guard let self, self.spare?.born == born, let warm = self.warmConfig else { return }
+            self.prewarm(warm)
+        }
     }
 
     func dropSpare() {
@@ -148,7 +161,7 @@ final class Asker {
     private func takeSpare(_ key: String) -> Spare? {
         guard let s = spare else { return nil }
         spare = nil
-        if s.key == key, s.process.isRunning, Date().timeIntervalSince(s.born) < Self.spareLifetime { return s }
+        if s.isFresh(for: key) { return s }
         s.process.terminate()
         return nil
     }
@@ -189,6 +202,8 @@ final class Asker {
     /// the answer so far, on the main queue, as it streams in.
     func ask(_ question: Question, after history: [Turn] = [], config: Config,
              partial: ((String) -> Void)? = nil, done: @escaping (Answer) -> Void) {
+        // The newest settings, so the spare started after this matches them.
+        if warmConfig != nil { warmConfig = config }
         cancel()
         let mine = generation
         let finish: (Answer) -> Void = { [weak self] answer in
@@ -209,8 +224,8 @@ final class Asker {
                 partial?(text)
             }
         }
-        if let key = APIKey.load() {
-            askAPI(question, after: history, key: key, config: config, progress: progress, finish: finish)
+        if let apiKey = APIKey.load() {
+            askAPI(question, after: history, key: apiKey, config: config, progress: progress, finish: finish)
             return
         }
         guard let exe = Self.claudePath(config.llmClaudePath) else {
@@ -499,7 +514,10 @@ struct CLIStream {
     mutating func feed<Bytes: DataProtocol>(_ line: Bytes) -> StreamStep? {
         guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
               obj["type"] as? String == "stream_event",
-              let event = obj["event"] as? [String: Any] else { return nil }
+              let event = obj["event"] as? [String: Any],
+              // The tool retries an API error itself and reports the outcome
+              // in its "result" line, so an error here does not end the answer.
+              event["type"] as? String != "error" else { return nil }
         return events.handle(event)
     }
 }

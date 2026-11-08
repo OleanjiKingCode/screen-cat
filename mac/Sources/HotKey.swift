@@ -25,7 +25,7 @@ final class HotKey {
         guard installed == noErr,
               RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), id, GetApplicationEventTarget(), 0, &ref) == noErr
         else {
-            if let handler { RemoveEventHandler(handler) }
+            // deinit still runs after a failed init, so it does the cleanup.
             return nil
         }
     }

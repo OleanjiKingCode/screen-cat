@@ -62,8 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var answerPanel: AnswerPanel?
     /// The newest answer, so copying part of it is not asked about again.
     private var lastAnswer = ""
-    /// The last ten answers, for the menu.
+    /// The latest answers, for the menu's Recent answers.
     private let answers = AnswerHistory()
+    /// The Model submenu's first tag; each model after it takes the next.
+    private static let firstModelTag = 741
     /// Option+Cmd+A, held while LLM mode is on.
     private var hotKey: HotKey?
     /// What has been asked and answered on the card that is up, so a
@@ -356,7 +358,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(llm, "Copy answers to clipboard", #selector(toggleCopyAnswers), tag: 701)
         let model = submenu(llm, "Model", tag: 740)
         for (i, m) in Asker.models.enumerated() {
-            add(model, m.name, #selector(pickModel(_:)), tag: 741 + i)
+            add(model, m.name, #selector(pickModel(_:)), tag: Self.firstModelTag + i)
         }
         llm.addItem(.separator())
         add(llm, "Set API key…", #selector(setAPIKey))
@@ -419,7 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menuItem(810)?.title = "Pet: \(c.pet == "dog" ? "Dog" : "Cat")"
         menuItem(510)?.title = "Mode: \(c.mode == "crawler" ? "Crawler" : "Normal")"
         menuItem(710)?.title = "LLM mode: \(c.llmMode ? "On" : "Off")"
-        for (i, m) in Asker.models.enumerated() { tick(741 + i, c.llmModel == m.id) }
+        for (i, m) in Asker.models.enumerated() { tick(Self.firstModelTag + i, c.llmModel == m.id) }
         let modelName = Asker.models.first { $0.id == c.llmModel }?.name.components(separatedBy: " (").first
         menuItem(740)?.title = "Model: \(modelName ?? c.llmModel)"
         // The shortcut shows on the item only while it really works.
@@ -649,7 +651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             break
         }
         // With a key no `claude` is needed; without one, have one ready.
-        applyLLMMode()
+        asker.prewarm(scene.config)
     }
 
     @objc private func togglePause(_ sender: NSMenuItem) {
@@ -812,11 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ActivityLog.shared.cat("llm: answered in \(took), copied")
                 self.lastAnswer = text
                 self.answers.add(question, answer: text)
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-                self.questions.ownChange = NSPasteboard.general.changeCount
-                self.statusItem.button?.toolTip = "Screen Cat: answer copied"
-                self.setBadge("✅", for: 4)
+                self.copyAnswer(text, badgeFor: 4)
             case .failed(let why):
                 ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
                 self.statusItem.button?.toolTip = "Screen Cat: \(why)"
@@ -877,12 +875,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Haiku, Sonnet or Opus. A ready `claude` started for the old model is
     /// swapped for one on the new model.
     @objc private func pickModel(_ sender: NSMenuItem) {
-        let index = sender.tag - 741
+        let index = sender.tag - Self.firstModelTag
         guard Asker.models.indices.contains(index) else { return }
         scene.config.llmModel = Asker.models[index].id
         Config.update("llmModel", to: scene.config.llmModel)
         ActivityLog.shared.cat("llm: model \(scene.config.llmModel)")
-        applyLLMMode()
+        asker.prewarm(scene.config)
     }
 
     /// The Recent answers submenu, newest first. Each copies its answer.
@@ -892,10 +890,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let time = DateFormatter()
         time.dateStyle = .none
         time.timeStyle = .short
-        for (i, entry) in answers.entries.enumerated() {
+        for entry in answers.entries {
             let item = NSMenuItem(title: AnswerHistory.oneLine(entry.answer, max: 50),
                                   action: #selector(copyRecentAnswer(_:)), keyEquivalent: "")
-            item.tag = i
+            // The text itself, not a place in the list, which a new answer
+            // can shift while the menu is open.
+            item.representedObject = entry.answer
             item.target = self
             item.toolTip = "\(time.string(from: entry.at)), about \(entry.asked)"
             menu.addItem(item)
@@ -914,13 +914,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func copyRecentAnswer(_ sender: NSMenuItem) {
-        guard answers.entries.indices.contains(sender.tag) else { return }
+        guard let text = sender.representedObject as? String else { return }
+        copyAnswer(text, badgeFor: 2)
+    }
+
+    /// Puts an answer on the clipboard as the cat's own copy, so LLM mode
+    /// does not ask about it, and shows ✅ on the menu bar icon.
+    private func copyAnswer(_ text: String, badgeFor seconds: TimeInterval) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(answers.entries[sender.tag].answer, forType: .string)
-        // Ours, so LLM mode does not ask about it.
+        NSPasteboard.general.setString(text, forType: .string)
         questions.ownChange = NSPasteboard.general.changeCount
         statusItem.button?.toolTip = "Screen Cat: answer copied"
-        setBadge("✅", for: 2)
+        setBadge("✅", for: seconds)
     }
 
     @objc private func clearRecentAnswers() { answers.clear() }
