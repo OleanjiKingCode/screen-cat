@@ -17,6 +17,8 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     var onCopy: (() -> Void)?
     /// Typed into the field under the answer and sent with Enter or the arrow.
     var onFollowUp: ((String) -> Void)?
+    /// "Log in" was clicked on a logged-out card.
+    var onLogIn: (() -> Void)?
     private(set) var answer = ""
     /// The pet's menu bar silhouette, shown at the start of the header.
     var petIcon: NSImage? {
@@ -52,6 +54,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     private let status = PillView()
     private let copiedNote = NSStackView()
     private let copyButton = CardButton()
+    private let loginButton = CardButton()
     private let closeButton = CardButton()
     private let asked = NSTextField(wrappingLabelWithString: "")
     private let divider = DividerView()
@@ -166,7 +169,12 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         closeButton.action = #selector(closeByUser)
         style(closeButton, symbol: "xmark", title: nil, color: muted)
         closeButton.toolTip = "Close (Esc)"
-        let right = NSStackView(views: [copyButton, closeButton])
+        loginButton.target = self
+        loginButton.action = #selector(logIn)
+        style(loginButton, symbol: "person.crop.circle", title: "Log in", color: ink)
+        loginButton.toolTip = "Opens Terminal and runs claude auth login"
+        loginButton.isHidden = true
+        let right = NSStackView(views: [copyButton, loginButton, closeButton])
         right.orientation = .horizontal
         right.spacing = 2
 
@@ -289,6 +297,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         copyFlip += 1
         setStatus(.thinking)
         copyButton.isHidden = true
+        loginButton.isHidden = true
         copiedNote.isHidden = true
         setAsked(question)
         showReply(false)
@@ -327,6 +336,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         answer = text
         setStatus(.answer)
         copyButton.isHidden = false
+        loginButton.isHidden = true
         resetCopyButton()
         showReply(true)
         setBody(answerText(text))
@@ -337,13 +347,16 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     /// offscreen render.
     func showCopiedNote() { copiedNote.isHidden = false }
 
-    func showError(_ text: String) {
+    /// `canLogIn` adds a "Log in" button and drops the follow-up field, which
+    /// cannot work until the login is back.
+    func showError(_ text: String, canLogIn: Bool = false) {
         stopThinking()
         answer = ""
         setStatus(.failed)
         copyButton.isHidden = true
+        loginButton.isHidden = !canLogIn
         copiedNote.isHidden = true
-        showReply(true)
+        showReply(!canLogIn)
         let para = NSMutableParagraphStyle()
         para.lineHeightMultiple = 1.2
         setBody(NSAttributedString(string: text.trimmingCharacters(in: .whitespacesAndNewlines), attributes: [
@@ -357,7 +370,7 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         reply.stringValue = ""
         tintSend()
         // A button clicked as the card goes never sees the pointer leave.
-        for button in [copyButton, closeButton, sendButton] { button.clearHover() }
+        for button in [copyButton, loginButton, closeButton, sendButton] { button.clearHover() }
         orderOut(nil)
     }
 
@@ -513,6 +526,11 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         NSLayoutConstraint.deactivate([shown ? bodyToCard : bodyToReply])
         NSLayoutConstraint.activate([shown ? bodyToReply : bodyToCard])
         if shown, isKeyWindow { makeFirstResponder(reply) }
+    }
+
+    @objc private func logIn() {
+        onLogIn?()
+        showError("Finish the sign-in in Terminal, then ask again.")
     }
 
     @objc private func sendFollowUp() {

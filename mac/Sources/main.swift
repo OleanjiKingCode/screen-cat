@@ -795,7 +795,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 panel.showAnswer(text, autoCopy: c.llmCopyAnswer)
             case .failed(let why):
                 ActivityLog.shared.cat("llm: no answer after \(took): \(why)")
-                panel.showError(why)
+                panel.showError(why, canLogIn: why == Asker.loggedOutMessage)
             }
         }
     }
@@ -860,6 +860,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.onCopy = { [weak self] in self?.questions.ownChange = NSPasteboard.general.changeCount }
         // Asked on purpose, so it goes even while paused, like the menu's ask.
         panel.onFollowUp = { [weak self] text in self?.ask(.followUp(text), fromMenu: true) }
+        panel.onLogIn = { [weak self] in
+            guard let self else { return }
+            ActivityLog.shared.cat("llm: log in clicked")
+            Asker.openLogin(config: self.scene.config)
+        }
         answerPanel = panel
         return panel
     }

@@ -453,7 +453,27 @@ final class Asker {
     private static func loginHint(_ message: String) -> String {
         let text = message.lowercased()
         let loggedOut = ["failed to authenticate", "not logged in", "/login", "oauth"].contains { text.contains($0) }
-        return loggedOut ? "Claude Code is logged out. Run \"claude auth login\" in Terminal, then ask again." : message
+        return loggedOut ? loggedOutMessage : message
+    }
+
+    static let loggedOutMessage = "Claude Code is logged out. Run \"claude auth login\" in Terminal, then ask again."
+
+    /// Runs `claude auth login` in a Terminal window, where the sign-in can
+    /// also take a pasted code if the browser cannot hand it back. A .command
+    /// file, since driving Terminal directly needs the Automation permission.
+    static func openLogin(config: Config) {
+        guard let exe = claudePath(config.llmClaudePath) else { return }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ScreenCatLLM")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("Log in to Claude Code.command")
+        let quoted = "'" + exe.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        do {
+            try "#!/bin/zsh\n\(quoted) auth login\n".write(to: file, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
+        } catch {
+            return
+        }
+        NSWorkspace.shared.open(file)
     }
 }
 

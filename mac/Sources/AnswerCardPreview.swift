@@ -49,6 +49,8 @@ func renderAnswerCards(to path: String) {
     snap("Screenshot answer, card pushed in from the screen edge")
     panel.showError("Could not find the claude command. Install Claude Code, or set llmClaudePath in settings.")
     snap("No answer")
+    panel.showError(Asker.loggedOutMessage, canLogIn: true)
+    snap("Logged out, with the log in button")
 
     // One paragraph: only its first sentence is the headline.
     panel.showThinking(.text("Is a tomato a fruit?"), above: CGPoint(x: 700, y: 120), within: screen)
