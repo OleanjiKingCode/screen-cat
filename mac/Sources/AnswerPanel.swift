@@ -5,46 +5,97 @@ import AppKit
 /// selected, scrolled and copied. It never takes focus from your app, and it
 /// follows the same screenshot setting as the cat, until you click into the
 /// follow-up field under an answer to ask more.
+///
+/// Everything on it is drawn in `draw(_:)`, not with layer colours, so an
+/// offscreen render (`--answer-card`) shows exactly what the screen does.
 final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     /// The card was closed by you, with ✕ or Esc. Not called by `dismiss()`.
     var onClose: (() -> Void)?
-    /// The answer was put on the clipboard, by the button or automatically.
+    /// The card wrote the clipboard: the answer, by the Copy button or
+    /// automatically, or a Cmd+C or Cmd+X of a selection or of the follow-up
+    /// text.
     var onCopy: (() -> Void)?
-    /// Typed into the field under the answer and sent with Enter or ASK.
+    /// Typed into the field under the answer and sent with Enter or the arrow.
     var onFollowUp: ((String) -> Void)?
+    /// "Log in" was clicked on a logged-out card.
+    var onLogIn: (() -> Void)?
     private(set) var answer = ""
+    /// The pet's menu bar silhouette, shown at the start of the header.
+    var petIcon: NSImage? {
+        didSet {
+            iconView.image = petIcon
+            iconView.isHidden = petIcon == nil
+        }
+    }
+    /// The pill's ANSWER colour and the text selection: the cat's fur, or
+    /// the dog's coat. Set on every ask, so a settings reload shows at once.
+    var accent: NSColor {
+        didSet { textView.selectedTextAttributes = [.backgroundColor: accent.withAlphaComponent(0.35)] }
+    }
+    /// Off for offscreen renders, which build the card without showing it.
+    var showsOnScreen = true
 
-    private static let width: CGFloat = 380
-    private static let maxTextHeight: CGFloat = 320
+    private static let width: CGFloat = 400
+    private static let maxTextHeight: CGFloat = 360
+    private static let side: CGFloat = 16
+    private static let headerHeight: CGFloat = 24
+    private static let replyHeight: CGFloat = 32
+    private static let dotsHeight: CGFloat = 22
+    /// The asked line shows at most this many lines, of at most this many
+    /// characters, so a long copy never pushes the field off the screen.
+    private static let askedLines = 2
+    private static let askedCharacters = 160
+    /// A long first line is cut at its first sentence end for the headline.
+    private static let headlineCharacters = 100
+
     private let ink: NSColor
-    private let heading = NSTextField(labelWithString: "")
+    private let card = CardView()
+    private let iconView = NSImageView()
+    private let status = PillView()
+    private let copiedNote = NSStackView()
+    private let copyButton = CardButton()
+    private let loginButton = CardButton()
+    private let closeButton = CardButton()
+    private let asked = NSTextField(wrappingLabelWithString: "")
+    private let divider = DividerView()
     private let textView = NSTextView()
     private let scroll = NSScrollView()
-    private let copyButton = NSButton()
+    private let dots = ThinkingDots()
+    private let replyBox = ReplyBox()
     private let reply = NSTextField()
-    private let askButton = NSButton()
-    private var scrollToCard: NSLayoutConstraint!
-    private var scrollToReply: NSLayoutConstraint!
-    private var dots = 0
+    private let sendButton = CardButton()
+    private var bodyHeight: NSLayoutConstraint!
+    private var askedHeight: NSLayoutConstraint!
+    private var bodyToCard: NSLayoutConstraint!
+    private var bodyToReply: NSLayoutConstraint!
     private var thinkingTimer: Timer?
+    /// Bumped on each copy, so an old "Copied" flip does not undo a newer one.
+    private var copyFlip = 0
     private var anchor = CGPoint.zero
     private var area = CGRect.zero
 
-    init(palette: Palette) {
+    private var muted: NSColor { ink.withAlphaComponent(0.55) }
+    private static let errorRed = NSColor(srgbRed: 0.64, green: 0.09, blue: 0.17, alpha: 1)
+    private static let copiedGreen = NSColor(srgbRed: 0.18, green: 0.56, blue: 0.33, alpha: 1)
+
+    init(palette: Palette, accent: NSColor) {
         ink = palette.outline
-        super.init(contentRect: CGRect(x: 0, y: 0, width: Self.width, height: 120),
+        self.accent = accent
+        super.init(contentRect: CGRect(x: 0, y: 0, width: Self.width, height: 160),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isFloatingPanel = true
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
         isMovableByWindowBackground = true
+        // Clear, so the rounded corners and the tail are real: only the card
+        // shape is painted, and the shadow follows it.
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
         isReleasedWhenClosed = false
         // Same as the cat's window: on every Space, over full-screen apps.
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        // The card is drawn in the bubble's fixed light colours.
+        // The card is drawn in fixed light colours.
         appearance = NSAppearance(named: .aqua)
         buildContent()
     }
@@ -56,15 +107,17 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
     override func cancelOperation(_ sender: Any?) { closeByUser() }
 
     /// The cat has no Edit menu, so Cmd+X, C, V and A are wired up here for
-    /// the answer and the follow-up field.
+    /// the answer and the follow-up field. A copy or cut made here is the
+    /// cat's own, so `onCopy` marks it and LLM mode does not ask about it.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let actions: [String: Selector] = [
             "x": #selector(NSText.cut(_:)), "c": #selector(NSText.copy(_:)),
             "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
         ]
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           let action = event.charactersIgnoringModifiers.flatMap({ actions[$0] }),
+           let key = event.charactersIgnoringModifiers, let action = actions[key],
            NSApp.sendAction(action, to: nil, from: self) {
+            if key == "c" || key == "x" { onCopy?() }
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -77,203 +130,658 @@ final class AnswerPanel: NSPanel, NSTextFieldDelegate {
         return true
     }
 
-    /// The cat's speech bubble, grown up: off-white with a chunky outline.
+    /// The send arrow lights up once there is something to send.
+    func controlTextDidChange(_ obj: Notification) { tintSend() }
+
+    // MARK: - Building
+
     private func buildContent() {
-        let card = NSView()
-        card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor(white: 0.98, alpha: 1).cgColor
-        card.layer?.borderColor = ink.cgColor
-        card.layer?.borderWidth = 3
+        card.fill = NSColor(srgbRed: 1.0, green: 0.988, blue: 0.965, alpha: 1)
+        card.stroke = ink
         contentView = card
 
-        heading.font = .monospacedSystemFont(ofSize: 11, weight: .bold)
-        heading.textColor = ink
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.contentTintColor = ink
+        iconView.isHidden = true
+
+        let check = NSImageView()
+        check.image = symbol("checkmark.circle.fill", size: 11)
+        check.contentTintColor = Self.copiedGreen
+        let copiedLabel = NSTextField(labelWithString: "Copied to clipboard")
+        copiedLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        copiedLabel.textColor = muted
+        copiedNote.orientation = .horizontal
+        copiedNote.spacing = 4
+        copiedNote.addArrangedSubview(check)
+        copiedNote.addArrangedSubview(copiedLabel)
+        copiedNote.isHidden = true
+
+        let left = NSStackView(views: [iconView, status, copiedNote])
+        left.orientation = .horizontal
+        left.spacing = 8
+        left.alignment = .centerY
 
         copyButton.target = self
         copyButton.action = #selector(copyAnswer)
-        label(copyButton, "COPY")
-        let close = NSButton(title: "", target: self, action: #selector(closeByUser))
-        label(close, "✕")
-        close.toolTip = "Close (Esc)"
+        resetCopyButton()
+        copyButton.toolTip = "Copy the answer"
+        closeButton.target = self
+        closeButton.action = #selector(closeByUser)
+        style(closeButton, symbol: "xmark", title: nil, color: muted)
+        closeButton.toolTip = "Close (Esc)"
+        loginButton.target = self
+        loginButton.action = #selector(logIn)
+        style(loginButton, symbol: "person.crop.circle", title: "Log in", color: ink)
+        loginButton.toolTip = "Opens Terminal and runs claude auth login"
+        loginButton.isHidden = true
+        let right = NSStackView(views: [copyButton, loginButton, closeButton])
+        right.orientation = .horizontal
+        right.spacing = 2
+
+        // A label, not selectable: a click on it would make the card key and
+        // swap in a plain field editor that drops the bold and the ellipsis.
+        asked.isSelectable = false
+        asked.font = .systemFont(ofSize: 11.5)
+        asked.textColor = muted
+        asked.maximumNumberOfLines = Self.askedLines
+        asked.lineBreakMode = .byWordWrapping
+        asked.cell?.truncatesLastVisibleLine = true
+        asked.preferredMaxLayoutWidth = Self.width - Self.side * 2
+
+        divider.color = ink.withAlphaComponent(0.12)
+        dots.color = ink
 
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: 13)
-        textView.textColor = ink
         textView.textContainerInset = .zero
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
         textView.isVerticallyResizable = true
         textView.autoresizingMask = [.width]
+        textView.selectedTextAttributes = [.backgroundColor: accent.withAlphaComponent(0.35)]
         scroll.documentView = textView
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
 
-        reply.placeholderString = "Ask a follow-up…"
+        replyBox.fill = .white
+        replyBox.stroke = ink.withAlphaComponent(0.2)
+        reply.isBordered = false
+        reply.drawsBackground = false
+        reply.focusRingType = .none
         reply.font = .systemFont(ofSize: 13)
-        reply.bezelStyle = .roundedBezel
+        reply.textColor = ink
+        reply.placeholderAttributedString = NSAttributedString(string: "Ask a follow-up…", attributes: [
+            .font: NSFont.systemFont(ofSize: 13), .foregroundColor: ink.withAlphaComponent(0.4),
+        ])
+        reply.cell?.usesSingleLineMode = true
+        reply.cell?.isScrollable = true
         reply.delegate = self
         reply.target = self
         reply.action = #selector(sendFollowUp)
-        askButton.target = self
-        askButton.action = #selector(sendFollowUp)
-        label(askButton, "ASK")
+        sendButton.target = self
+        sendButton.action = #selector(sendFollowUp)
+        sendButton.hoverFill = .clear
+        style(sendButton, symbol: "arrow.up.circle.fill", title: nil, color: ink, size: 19)
+        sendButton.toolTip = "Ask (Return)"
+        tintSend()
 
-        for v in [heading, copyButton, close, scroll, reply, askButton] {
+        for v in [left, right, asked, divider, scroll, dots, replyBox] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             card.addSubview(v)
         }
+        for v in [reply, sendButton] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            replyBox.addSubview(v)
+        }
+        let side = Self.side
+        bodyHeight = scroll.heightAnchor.constraint(equalToConstant: 20)
+        askedHeight = asked.heightAnchor.constraint(equalToConstant: 14)
         NSLayoutConstraint.activate([
-            heading.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            heading.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
-            close.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
-            close.centerYAnchor.constraint(equalTo: heading.centerYAnchor),
-            copyButton.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -6),
-            copyButton.centerYAnchor.constraint(equalTo: heading.centerYAnchor),
-            scroll.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            scroll.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            scroll.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 10),
-            reply.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            reply.trailingAnchor.constraint(equalTo: askButton.leadingAnchor, constant: -8),
-            reply.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
-            askButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
-            askButton.centerYAnchor.constraint(equalTo: reply.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 16),
+            iconView.heightAnchor.constraint(equalToConstant: 14),
+            right.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            right.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
+            right.heightAnchor.constraint(equalToConstant: Self.headerHeight),
+            left.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: side),
+            left.centerYAnchor.constraint(equalTo: right.centerYAnchor),
+            left.trailingAnchor.constraint(lessThanOrEqualTo: right.leadingAnchor, constant: -8),
+            status.heightAnchor.constraint(equalToConstant: 18),
+
+            asked.topAnchor.constraint(equalTo: right.bottomAnchor, constant: 8),
+            asked.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: side),
+            asked.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -side),
+            askedHeight,
+            divider.topAnchor.constraint(equalTo: asked.bottomAnchor, constant: 10),
+            divider.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: side),
+            divider.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -side),
+            divider.heightAnchor.constraint(equalToConstant: 1),
+
+            scroll.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
+            scroll.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: side),
+            scroll.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -side),
+            bodyHeight,
+            dots.topAnchor.constraint(equalTo: scroll.topAnchor),
+            dots.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            dots.widthAnchor.constraint(equalToConstant: 60),
+            dots.heightAnchor.constraint(equalToConstant: Self.dotsHeight),
+
+            replyBox.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+            replyBox.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            replyBox.heightAnchor.constraint(equalToConstant: Self.replyHeight),
+            replyBox.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -(CardView.tail + 12)),
+            reply.leadingAnchor.constraint(equalTo: replyBox.leadingAnchor, constant: 14),
+            reply.centerYAnchor.constraint(equalTo: replyBox.centerYAnchor),
+            reply.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -6),
+            sendButton.trailingAnchor.constraint(equalTo: replyBox.trailingAnchor, constant: -4),
+            sendButton.centerYAnchor.constraint(equalTo: replyBox.centerYAnchor),
+            sendButton.widthAnchor.constraint(equalToConstant: 26),
+            sendButton.heightAnchor.constraint(equalToConstant: 26),
         ])
         // The text runs down to the field when it shows, else to the edge.
-        scrollToCard = scroll.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14)
-        scrollToReply = scroll.bottomAnchor.constraint(equalTo: reply.topAnchor, constant: -10)
+        bodyToCard = scroll.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -(CardView.tail + 16))
+        bodyToReply = scroll.bottomAnchor.constraint(equalTo: replyBox.topAnchor, constant: -14)
         showReply(false)
     }
 
+    // MARK: - States
+
     /// Shows the card above `anchor` (a global point, the top of the cat's
-    /// head) while the answer is on its way, with what was asked in grey.
+    /// head) while the answer is on its way: what was asked, and dots.
     func showThinking(_ question: Question, above anchor: CGPoint, within screen: CGRect) {
         self.anchor = anchor
         area = screen
-        thinkingTimer?.invalidate()
         answer = ""
+        copyFlip += 1
+        setStatus(.thinking)
         copyButton.isHidden = true
+        loginButton.isHidden = true
+        copiedNote.isHidden = true
+        setAsked(question)
         showReply(false)
-        let asked: String
-        switch question {
-        case .text(let s), .followUp(let s):
-            let line = s.replacingOccurrences(of: "\n", with: " ")
-            asked = line.count > 160 ? String(line.prefix(160)) + "…" : line
-        case .image(_, let from):
-            asked = from == "screenshot" ? "Your screenshot" : "Your copied image"
+        textView.string = ""
+        scroll.isHidden = true
+        dots.isHidden = false
+        dots.phase = 0
+        thinkingTimer?.invalidate()
+        if showsOnScreen {
+            let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                self.dots.phase = (self.dots.phase + 1.0 / 30.0 / 1.2).truncatingRemainder(dividingBy: 1)
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            thinkingTimer = timer
         }
-        setBody(asked, color: ink.withAlphaComponent(0.55))
-        dots = 0
-        heading.stringValue = "THINKING"
-        thinkingTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.dots = (self.dots + 1) % 4
-            self.heading.stringValue = "THINKING" + String(repeating: ".", count: self.dots)
+        resize(bodyHeight: Self.dotsHeight)
+        if showsOnScreen { orderFrontRegardless() }
+    }
+
+    /// The answer so far, while Claude is still writing it. The card grows
+    /// as it fills; Copy and the follow-up field wait for the whole answer.
+    func showPartial(_ text: String) {
+        guard !text.isEmpty else { return }
+        if !dots.isHidden {
+            stopThinking()
+            setStatus(.writing)
         }
-        orderFrontRegardless()
+        setBody(answerText(text), followEnd: true)
     }
 
     /// The answer. It stays up until you close it, however long you read.
-    func showAnswer(_ text: String) {
-        thinkingTimer?.invalidate()
+    /// With `autoCopy` it also goes on the clipboard, and the header says so.
+    func showAnswer(_ text: String, autoCopy: Bool = false) {
+        stopThinking()
         answer = text
-        heading.stringValue = "ANSWER"
+        setStatus(.answer)
         copyButton.isHidden = false
+        loginButton.isHidden = true
+        resetCopyButton()
         showReply(true)
-        setBody(text, color: ink)
+        setBody(answerText(text))
+        copiedNote.isHidden = !(autoCopy && putOnClipboard())
     }
 
-    func showError(_ text: String) {
-        thinkingTimer?.invalidate()
+    /// Only the "Copied to clipboard" note, with no copy made, for the
+    /// offscreen render.
+    func showCopiedNote() { copiedNote.isHidden = false }
+
+    /// `canLogIn` adds a "Log in" button and drops the follow-up field, which
+    /// cannot work until the login is back.
+    func showError(_ text: String, canLogIn: Bool = false) {
+        stopThinking()
         answer = ""
-        heading.stringValue = "NO ANSWER"
+        setStatus(.failed)
         copyButton.isHidden = true
-        showReply(true)
-        setBody(text, color: NSColor(srgbRed: 0.7, green: 0.12, blue: 0.2, alpha: 1))
+        loginButton.isHidden = !canLogIn
+        copiedNote.isHidden = true
+        showReply(!canLogIn)
+        let para = NSMutableParagraphStyle()
+        para.lineHeightMultiple = 1.2
+        setBody(NSAttributedString(string: text.trimmingCharacters(in: .whitespacesAndNewlines), attributes: [
+            .font: NSFont.systemFont(ofSize: 13), .foregroundColor: Self.errorRed, .paragraphStyle: para,
+        ]))
     }
 
     /// Takes the card away without telling anyone: the cat is already going.
     func dismiss() {
-        thinkingTimer?.invalidate()
+        stopThinking()
         reply.stringValue = ""
+        tintSend()
+        // A button clicked as the card goes never sees the pointer leave.
+        for button in [copyButton, loginButton, closeButton, sendButton] { button.clearHover() }
         orderOut(nil)
+    }
+
+    private func stopThinking() {
+        thinkingTimer?.invalidate()
+        thinkingTimer = nil
+        dots.isHidden = true
+        scroll.isHidden = false
+    }
+
+    private enum Status { case thinking, writing, answer, failed }
+
+    private func setStatus(_ s: Status) {
+        switch s {
+        case .thinking, .writing:
+            status.text = s == .thinking ? "THINKING" : "WRITING"
+            status.fill = NSColor(srgbRed: 1.0, green: 0.91, blue: 0.64, alpha: 1)
+            status.textColor = NSColor(srgbRed: 0.48, green: 0.31, blue: 0.0, alpha: 1)
+        case .answer:
+            status.text = "ANSWER"
+            status.fill = accent.blended(withFraction: 0.7, of: .white) ?? accent
+            status.textColor = ink
+        case .failed:
+            status.text = "NO ANSWER"
+            status.fill = NSColor(srgbRed: 0.98, green: 0.86, blue: 0.87, alpha: 1)
+            status.textColor = Self.errorRed
+        }
+    }
+
+    /// One muted line of what was asked, so the answer has its context.
+    private func setAsked(_ question: Question) {
+        let prefix: String
+        let rest: String
+        switch question {
+        case .text(let s):
+            prefix = "You copied: "
+            rest = Self.oneLine(s)
+        case .followUp(let s):
+            prefix = "You asked: "
+            rest = Self.oneLine(s)
+        case .image(_, let from):
+            prefix = from == "screenshot" ? "Your screenshot" : "Your copied image"
+            rest = ""
+        }
+        let text = NSMutableAttributedString(string: prefix, attributes: [
+            .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold), .foregroundColor: muted,
+        ])
+        text.append(NSAttributedString(string: rest, attributes: [
+            .font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: muted,
+        ]))
+        // Wraps, and the label cuts the last line it has room for short
+        // with an ellipsis. Its height is set to at most two lines, so the
+        // text can never make the card taller than that.
+        let para = NSMutableParagraphStyle()
+        para.lineBreakMode = .byWordWrapping
+        text.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: text.length))
+        asked.attributedStringValue = text
+        // Measured with a cell like the label's own, so the two agree to the
+        // point: the full wrapped height, and the height of two lines.
+        let insets = asked.alignmentRectInsets
+        let bounds = CGRect(x: 0, y: 0, width: Self.width - Self.side * 2 + insets.left + insets.right,
+                            height: 10_000)
+        func height(_ string: NSAttributedString) -> CGFloat {
+            let cell = NSTextFieldCell(textCell: "")
+            cell.wraps = true
+            cell.attributedStringValue = string
+            return ceil(cell.cellSize(forBounds: bounds).height)
+        }
+        let lines = Array(repeating: "Xg", count: Self.askedLines).joined(separator: "\n")
+        let cap = height(NSAttributedString(string: lines, attributes: [
+            .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold), .paragraphStyle: para,
+        ]))
+        askedHeight.constant = min(height(text), cap)
+    }
+
+    /// Newlines folded to spaces, cut to `askedCharacters` with an ellipsis.
+    private static func oneLine(_ s: String) -> String {
+        let flat = s.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return flat.count > askedCharacters ? String(flat.prefix(askedCharacters)) + "…" : flat
+    }
+
+    /// The first line is the answer itself, so it reads as a headline; the
+    /// lines after it are the working, in a quieter body style.
+    private func answerText(_ raw: String) -> NSAttributedString {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        var head = String(parts.first ?? "")
+        var rest = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        // A one-paragraph answer would be all headline. Past a short line,
+        // the headline is the first sentence and the rest joins the body.
+        if head.count > Self.headlineCharacters, let end = Self.firstSentenceEnd(in: head) {
+            let tail = head[end...].trimmingCharacters(in: .whitespaces)
+            head = String(head[..<end])
+            rest = rest.isEmpty ? tail : tail + "\n" + rest
+        }
+
+        let headPara = NSMutableParagraphStyle()
+        headPara.lineHeightMultiple = 1.15
+        headPara.paragraphSpacing = 8
+        let bodyPara = NSMutableParagraphStyle()
+        bodyPara.lineHeightMultiple = 1.2
+        bodyPara.paragraphSpacing = 6
+
+        let out = NSMutableAttributedString(string: head, attributes: [
+            .font: NSFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: ink, .paragraphStyle: headPara,
+        ])
+        guard !rest.isEmpty else { return out }
+        out.append(NSAttributedString(string: "\n", attributes: [
+            .font: NSFont.systemFont(ofSize: 15, weight: .semibold), .paragraphStyle: headPara,
+        ]))
+        out.append(NSAttributedString(string: rest, attributes: [
+            .font: NSFont.systemFont(ofSize: 13), .foregroundColor: ink.withAlphaComponent(0.82),
+            .paragraphStyle: bodyPara,
+        ]))
+        return out
+    }
+
+    /// Just past the first ". ", "? " or "! ", or nil when there is none.
+    private static func firstSentenceEnd(in line: String) -> String.Index? {
+        var best: String.Index?
+        for mark in [". ", "? ", "! "] {
+            guard let found = line.range(of: mark) else { continue }
+            let end = line.index(after: found.lowerBound)
+            if best.map({ end < $0 }) ?? true { best = end }
+        }
+        return best
+    }
+
+    /// `followEnd` keeps the newest words in view while an answer is still
+    /// being written and is taller than the card. Otherwise it shows the top.
+    private func setBody(_ text: NSAttributedString, followEnd: Bool = false) {
+        textView.textStorage?.setAttributedString(text)
+        let width = Self.width - Self.side * 2
+        textView.frame = CGRect(x: 0, y: 0, width: width, height: 10)
+        guard let layout = textView.layoutManager, let container = textView.textContainer else { return }
+        container.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        let used = ceil(layout.usedRect(for: container).height)
+        textView.frame.size.height = max(used, 18)
+        resize(bodyHeight: min(Self.maxTextHeight, max(18, used)))
+        if followEnd {
+            textView.scrollToEndOfDocument(nil)
+        } else {
+            textView.scroll(.zero)
+        }
     }
 
     /// The field shows under an answer, not while one is on its way. Once
     /// you have clicked into it, it keeps the focus for the next follow-up.
     private func showReply(_ shown: Bool) {
         if !shown, reply.currentEditor() != nil { makeFirstResponder(nil) }
-        reply.isHidden = !shown
-        askButton.isHidden = !shown
-        NSLayoutConstraint.deactivate([shown ? scrollToCard : scrollToReply])
-        NSLayoutConstraint.activate([shown ? scrollToReply : scrollToCard])
+        replyBox.isHidden = !shown
+        NSLayoutConstraint.deactivate([shown ? bodyToCard : bodyToReply])
+        NSLayoutConstraint.activate([shown ? bodyToReply : bodyToCard])
         if shown, isKeyWindow { makeFirstResponder(reply) }
+    }
+
+    @objc private func logIn() {
+        onLogIn?()
+        showError("Finish the sign-in in Terminal, then ask again.")
     }
 
     @objc private func sendFollowUp() {
         let text = reply.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         reply.stringValue = ""
+        tintSend()
         onFollowUp?(text)
     }
-
 
     @objc private func closeByUser() {
         dismiss()
         onClose?()
     }
 
+    /// The Copy button: copies, and says so on the button for a moment.
     @objc func copyAnswer() {
-        guard !answer.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(answer, forType: .string)
-        onCopy?()
-        label(copyButton, "COPIED")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            guard let self else { return }
-            self.label(self.copyButton, "COPY")
+        guard putOnClipboard() else { return }
+        copyFlip += 1
+        let mine = copyFlip
+        style(copyButton, symbol: "checkmark", title: "Copied", color: Self.copiedGreen)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
+            guard let self, self.copyFlip == mine else { return }
+            self.resetCopyButton()
         }
     }
 
-    /// Plain ink text, no bezel. A bezel button greys out whenever the card
-    /// is not focused, which is nearly always.
-    private func label(_ button: NSButton, _ title: String) {
+    @discardableResult
+    private func putOnClipboard() -> Bool {
+        guard !answer.isEmpty else { return false }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(answer, forType: .string)
+        onCopy?()
+        return true
+    }
+
+    // MARK: - Look
+
+    private func symbol(_ name: String, size: CGFloat) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: size, weight: .semibold))
+    }
+
+    /// No bezel, and the colour set on the title and the tint. A bezel
+    /// button greys out whenever the card is not focused, which is nearly
+    /// always.
+    private func style(_ button: CardButton, symbol name: String, title: String?, color: NSColor,
+                       size: CGFloat = 12) {
         button.isBordered = false
-        button.attributedTitle = NSAttributedString(string: title, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
-            .foregroundColor: ink,
+        button.image = symbol(name, size: size)
+        button.contentTintColor = color
+        button.imagePosition = title == nil ? .imageOnly : .imageLeading
+        button.imageHugsTitle = true
+        button.attributedTitle = NSAttributedString(string: title ?? "", attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: color,
         ])
+        button.invalidateIntrinsicContentSize()
     }
 
-    private func setBody(_ text: String, color: NSColor) {
-        textView.string = text
-        textView.textColor = color
-        textView.font = .systemFont(ofSize: 13)
-        resize()
+    private func resetCopyButton() {
+        style(copyButton, symbol: "doc.on.doc", title: "Copy", color: ink)
     }
 
-    /// Grows to fit the text up to a cap, then scrolls. The bottom edge stays
-    /// just above the cat's head, kept inside the screen.
-    private func resize() {
-        let textWidth = Self.width - 28
-        textView.frame = CGRect(x: 0, y: 0, width: textWidth, height: 10)
-        guard let layout = textView.layoutManager, let container = textView.textContainer else { return }
-        container.containerSize = CGSize(width: textWidth, height: .greatestFiniteMagnitude)
-        layout.ensureLayout(for: container)
-        let textHeight = min(Self.maxTextHeight, max(18, ceil(layout.usedRect(for: container).height)))
-        let replyHeight = reply.isHidden ? 0 : reply.intrinsicContentSize.height + 10
-        let height = textHeight + 12 + 16 + 10 + 14 + replyHeight
+    private func tintSend() {
+        let empty = reply.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        sendButton.contentTintColor = empty ? ink.withAlphaComponent(0.25) : ink
+    }
+
+    /// Fits the card to its content, keeps it inside the screen, and points
+    /// the tail at the cat's head even when the card is pushed sideways. A
+    /// card taller than the room above the cat gives up body height, which
+    /// then scrolls, so the follow-up field always stays on the screen.
+    private func resize(bodyHeight body: CGFloat) {
         // No screen given yet: use the main one, never an empty rect, which
         // AppKit rejects as a window frame.
         let given = area.width > 24 && area.height > 24 ? area : (NSScreen.main?.visibleFrame ?? .zero)
         let room = given.insetBy(dx: 12, dy: 12)
+        let bottom = min(anchor.y + 4, room.maxY - 120)
+        bodyHeight.constant = body
+        // The height comes from the constraints, so the spacing is written
+        // down once, in buildContent().
+        var height = ceil(card.fittingSize.height)
+        let over = height - (room.maxY - bottom)
+        if over > 0 {
+            bodyHeight.constant = max(40, body - over)
+            height = ceil(card.fittingSize.height)
+        }
         var x = anchor.x - Self.width / 2
         x = min(max(x, room.minX), room.maxX - Self.width)
-        var y = anchor.y + 8
-        y = min(y, room.maxY - height)
+        let y = min(bottom, room.maxY - height)
+        card.tailX = anchor.x - x
         setFrame(CGRect(x: x, y: y, width: Self.width, height: height), display: true)
+        card.layoutSubtreeIfNeeded()
+        invalidateShadow()
+    }
+}
+
+// MARK: - Pieces
+
+/// The card itself: a rounded speech bubble with a tail at the bottom that
+/// points at the cat.
+final class CardView: NSView {
+    static let radius: CGFloat = 14
+    static let tail: CGFloat = 10
+    var fill = NSColor.white
+    var stroke = NSColor.black
+    /// Where the tail points, in this view's coordinates.
+    var tailX: CGFloat = 200 { didSet { needsDisplay = true } }
+
+    override var isOpaque: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = Self.outline(in: bounds, tailX: tailX)
+        fill.setFill()
+        path.fill()
+        stroke.setStroke()
+        path.lineWidth = 2
+        path.stroke()
+    }
+
+    static func outline(in bounds: CGRect, tailX: CGFloat) -> NSBezierPath {
+        let r = CGRect(x: bounds.minX + 1, y: bounds.minY + tail + 1,
+                       width: bounds.width - 2, height: bounds.height - tail - 2)
+        let corner = radius, half: CGFloat = 9
+        let tip = min(max(tailX, r.minX + corner + half), r.maxX - corner - half)
+        let p = NSBezierPath()
+        p.move(to: CGPoint(x: r.minX + corner, y: r.minY))
+        p.line(to: CGPoint(x: tip - half, y: r.minY))
+        p.line(to: CGPoint(x: tip, y: r.minY - tail))
+        p.line(to: CGPoint(x: tip + half, y: r.minY))
+        p.line(to: CGPoint(x: r.maxX - corner, y: r.minY))
+        p.appendArc(from: CGPoint(x: r.maxX, y: r.minY), to: CGPoint(x: r.maxX, y: r.minY + corner), radius: corner)
+        p.line(to: CGPoint(x: r.maxX, y: r.maxY - corner))
+        p.appendArc(from: CGPoint(x: r.maxX, y: r.maxY), to: CGPoint(x: r.maxX - corner, y: r.maxY), radius: corner)
+        p.line(to: CGPoint(x: r.minX + corner, y: r.maxY))
+        p.appendArc(from: CGPoint(x: r.minX, y: r.maxY), to: CGPoint(x: r.minX, y: r.maxY - corner), radius: corner)
+        p.line(to: CGPoint(x: r.minX, y: r.minY + corner))
+        p.appendArc(from: CGPoint(x: r.minX, y: r.minY), to: CGPoint(x: r.minX + corner, y: r.minY), radius: corner)
+        p.close()
+        p.lineJoinStyle = .round
+        return p
+    }
+}
+
+/// THINKING, ANSWER or NO ANSWER, in a small coloured pill.
+final class PillView: NSView {
+    var text = "" { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    var fill = NSColor.white { didSet { needsDisplay = true } }
+    var textColor = NSColor.black { didSet { needsDisplay = true } }
+
+    private var attributes: [NSAttributedString.Key: Any] {
+        [.font: NSFont.systemFont(ofSize: 10, weight: .bold), .foregroundColor: textColor, .kern: 0.6]
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let size = (text as NSString).size(withAttributes: attributes)
+        return NSSize(width: ceil(size.width) + 18, height: 18)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        fill.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+        let size = (text as NSString).size(withAttributes: attributes)
+        (text as NSString).draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
+                                withAttributes: attributes)
+    }
+}
+
+/// A one-point rule under what was asked.
+final class DividerView: NSView {
+    var color = NSColor.black
+    override func draw(_ dirtyRect: NSRect) {
+        color.setFill()
+        bounds.fill()
+    }
+}
+
+/// Three dots that pulse in turn while the answer is on its way.
+final class ThinkingDots: NSView {
+    var color = NSColor.black
+    /// 0 to 1 through one pulse.
+    var phase: CGFloat = 0 { didSet { needsDisplay = true } }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let size: CGFloat = 7, gap: CGFloat = 6
+        for i in 0..<3 {
+            let wave = 0.5 + 0.5 * sin(phase * 2 * .pi - CGFloat(i) * 0.9)
+            color.withAlphaComponent(0.2 + 0.7 * wave).setFill()
+            let rect = CGRect(x: 1 + CGFloat(i) * (size + gap), y: (bounds.height - size) / 2 + wave * 2,
+                              width: size, height: size)
+            NSBezierPath(ovalIn: rect).fill()
+        }
+    }
+}
+
+/// The rounded box the follow-up field and its send arrow sit in.
+final class ReplyBox: NSView {
+    var fill = NSColor.white
+    var stroke = NSColor.black
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                xRadius: bounds.height / 2, yRadius: bounds.height / 2)
+        fill.setFill()
+        path.fill()
+        stroke.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+}
+
+/// A borderless button with a soft highlight under the pointer. The card is
+/// usually not the key window (it only takes the keyboard once you click into
+/// the follow-up field), so the tracking is active whichever window is key.
+final class CardButton: NSButton {
+    var hoverFill = NSColor.black.withAlphaComponent(0.06)
+    private var hovering = false { didSet { needsDisplay = true } }
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area)
+        tracking = area
+        // A swapped tracking area sends no exit for the old one, so read
+        // where the pointer is now.
+        if let window {
+            hovering = window.isVisible && bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        }
+    }
+
+    func clearHover() { hovering = false }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.width += imagePosition == .imageOnly ? 8 : 14
+        size.height = max(size.height, 24)
+        return size
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if hovering {
+            hoverFill.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+        }
+        super.draw(dirtyRect)
     }
 }

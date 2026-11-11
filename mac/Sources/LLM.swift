@@ -38,16 +38,42 @@ enum Answer {
 /// Answers a question with Claude. With your own API key it calls the Claude
 /// API directly. Without one it runs the `claude` command line tool with the
 /// login it already has. One question at a time: a new one cancels the one
-/// before it.
+/// before it. Both ways stream, so the card fills in as Claude writes.
 ///
 /// The tool runs with no tools, no MCP servers, no CLAUDE.md and no memory,
 /// from an empty folder, so your coding setup does not leak into the answers.
 final class Asker {
     private var process: Process?
-    private var task: URLSessionDataTask?
+    private var apiJob: Task<Void, Never>?
     /// Bumped on every ask and cancel, so a late reply to an old question is
     /// dropped instead of replacing the new one.
     private var generation = 0
+    /// A `claude` already started and waiting for its question. Starting the
+    /// tool takes a few seconds before it even asks Claude, so while LLM mode
+    /// is on one is kept ready, and each question takes it.
+    private var spare: Spare?
+    /// Keep a spare ready. On while LLM mode is on.
+    var keepWarm = false
+    private var warmConfig: Config?
+
+    private struct Spare {
+        let process: Process
+        let input: Pipe
+        let output: Pipe
+        let errors: Pipe
+        /// The tool, model and effort it was started with.
+        let key: String
+        let born: Date
+
+        /// Started with these settings, still running, and not too old.
+        func isFresh(for key: String) -> Bool {
+            self.key == key && process.isRunning && Date().timeIntervalSince(born) < Asker.spareLifetime
+        }
+    }
+
+    /// A spare older than this is swapped for a new one, in case the login
+    /// it started with has gone stale.
+    static let spareLifetime: TimeInterval = 30 * 60
 
     static let systemPrompt = """
     You are the brain of Screen Cat, a desktop pet cat. The user just copied some text or took \
@@ -67,6 +93,13 @@ final class Asker {
     in plain text, for example x^2 + 3x = 10, sqrt(2), pi.
     """
 
+    /// The models the LLM menu offers, fastest first.
+    static let models: [(id: String, name: String)] = [
+        ("claude-haiku-5-5", "Haiku 5.5 (fastest)"),
+        ("claude-sonnet-5-5", "Sonnet 5.5"),
+        ("claude-opus-5-5", "Opus 5.5 (smartest)"),
+    ]
+
     /// launchd starts the cat with a bare PATH, so the usual install spots are
     /// checked by hand.
     static func claudePath(_ configured: String) -> String? {
@@ -79,52 +112,72 @@ final class Asker {
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    /// A question is out and its answer has not come back yet.
+    var isAsking: Bool { process != nil || apiJob != nil }
+
     func cancel() {
         generation += 1
         process?.terminate()
         process = nil
-        task?.cancel()
-        task = nil
+        apiJob?.cancel()
+        apiJob = nil
+        // The question that was cut off took the spare, so start the next one.
+        if let warm = warmConfig { prewarm(warm) }
     }
 
-    /// Calls `done` once, on the main queue, unless cancelled first. `history`
-    /// is the conversation so far on the card, oldest first.
-    func ask(_ question: Question, after history: [Turn] = [], config: Config,
-             done: @escaping (Answer) -> Void) {
-        cancel()
-        let mine = generation
-        let finish: (Answer) -> Void = { [weak self] answer in
-            DispatchQueue.main.async {
-                guard let self, self.generation == mine else { return }
-                // Once only: a timeout and the reader can both get here.
-                self.generation += 1
-                self.process = nil
-                self.task = nil
-                done(answer)
-            }
-        }
-        if let key = APIKey.load() {
-            askAPI(question, after: history, key: key, config: config, finish: finish)
+    /// Has a `claude` ready for the next question, started with these
+    /// settings. Does nothing with an API key, which needs no tool, or when
+    /// `keepWarm` is off. A spare started with other settings is replaced.
+    func prewarm(_ config: Config) {
+        warmConfig = config
+        guard keepWarm, APIKey.load() == nil, let exe = Self.claudePath(config.llmClaudePath) else {
+            dropSpare()
             return
         }
-        guard let exe = Self.claudePath(config.llmClaudePath) else {
-            finish(.failed("Could not find the claude command. Install Claude Code, or set llmClaudePath in settings."))
-            return
+        if let spare, spare.isFresh(for: Self.spareKey(exe, config)) { return }
+        dropSpare()
+        let fresh = Self.launch(exe, config)
+        spare = fresh
+        // Swapped for a new one once it is too old, so a question after a
+        // long quiet spell does not start cold.
+        guard let born = fresh?.born else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.spareLifetime + 1) { [weak self] in
+            guard let self, self.spare?.born == born, let warm = self.warmConfig else { return }
+            self.prewarm(warm)
         }
-        guard let line = Self.inputLine(question, after: history) else {
-            finish(.failed("Could not read what you copied."))
-            return
-        }
+    }
 
+    func dropSpare() {
+        spare?.process.terminate()
+        spare = nil
+    }
+
+    private static func spareKey(_ exe: String, _ config: Config) -> String {
+        "\(exe)|\(config.llmModel)|\(config.llmEffort)"
+    }
+
+    /// Takes the spare when it was started with these settings and is still
+    /// fresh, else nil.
+    private func takeSpare(_ key: String) -> Spare? {
+        guard let s = spare else { return nil }
+        spare = nil
+        if s.isFresh(for: key) { return s }
+        s.process.terminate()
+        return nil
+    }
+
+    /// Starts `claude`, which then waits for its question on standard input.
+    private static func launch(_ exe: String, _ config: Config) -> Spare? {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ScreenCatLLM")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: exe)
         p.currentDirectoryURL = folder
         p.arguments = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+                       "--include-partial-messages",
                        "--tools", "", "--strict-mcp-config", "--disable-slash-commands",
                        "--no-session-persistence", "--model", config.llmModel, "--effort", config.llmEffort,
-                       "--system-prompt", Self.systemPrompt]
+                       "--system-prompt", systemPrompt]
         var env = ProcessInfo.processInfo.environment
         env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
@@ -138,9 +191,56 @@ final class Asker {
         do {
             try p.run()
         } catch {
-            finish(.failed("Could not start claude: \(error.localizedDescription)"))
+            return nil
+        }
+        return Spare(process: p, input: input, output: output, errors: errors,
+                     key: spareKey(exe, config), born: Date())
+    }
+
+    /// Calls `done` once, on the main queue, unless cancelled first. `history`
+    /// is the conversation so far on the card, oldest first. `partial` gets
+    /// the answer so far, on the main queue, as it streams in.
+    func ask(_ question: Question, after history: [Turn] = [], config: Config,
+             partial: ((String) -> Void)? = nil, done: @escaping (Answer) -> Void) {
+        // The newest settings, so the spare started after this matches them.
+        if warmConfig != nil { warmConfig = config }
+        cancel()
+        let mine = generation
+        let finish: (Answer) -> Void = { [weak self] answer in
+            DispatchQueue.main.async {
+                guard let self, self.generation == mine else { return }
+                // Once only: a timeout and the reader can both get here.
+                self.generation += 1
+                self.process = nil
+                self.apiJob = nil
+                done(answer)
+                // Ready for the next question, now this one is done.
+                if let warm = self.warmConfig { self.prewarm(warm) }
+            }
+        }
+        let progress = Self.throttled { [weak self] text in
+            DispatchQueue.main.async {
+                guard let self, self.generation == mine else { return }
+                partial?(text)
+            }
+        }
+        if let apiKey = APIKey.load() {
+            askAPI(question, after: history, key: apiKey, config: config, progress: progress, finish: finish)
             return
         }
+        guard let exe = Self.claudePath(config.llmClaudePath) else {
+            finish(.failed("Could not find the claude command. Install Claude Code, or set llmClaudePath in settings."))
+            return
+        }
+        guard let line = Self.inputLine(question, after: history) else {
+            finish(.failed("Could not read what you copied."))
+            return
+        }
+        guard let tool = takeSpare(Self.spareKey(exe, config)) ?? Self.launch(exe, config) else {
+            finish(.failed("Could not start claude."))
+            return
+        }
+        let p = tool.process
         process = p
 
         // Both pipes are drained on their own queues, or a chatty stderr could
@@ -149,17 +249,42 @@ final class Asker {
         let drained = DispatchGroup()
         drained.enter()
         DispatchQueue.global().async {
-            errorText = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            errorText = String(decoding: tool.errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             drained.leave()
         }
         DispatchQueue.global().async {
             // A screenshot is a few MB of base64, so the write can block until
             // claude reads it. Never on the main thread.
-            input.fileHandleForWriting.write(line)
-            try? input.fileHandleForWriting.close()
+            tool.input.fileHandleForWriting.write(line)
+            try? tool.input.fileHandleForWriting.close()
         }
         DispatchQueue.global().async {
-            let out = output.fileHandleForReading.readDataToEndOfFile()
+            // Read as it comes. The answer is complete at the end of Claude's
+            // message; the tool then spends a few more seconds on its own
+            // bookkeeping before it exits, which nobody needs to wait for.
+            var out = Data()
+            var pending = Data()
+            var stream = CLIStream()
+            let handle = tool.output.fileHandleForReading
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break }
+                out.append(chunk)
+                pending.append(chunk)
+                while let newline = pending.firstIndex(of: 0x0A) {
+                    let line = pending[pending.startIndex..<newline]
+                    pending.removeSubrange(pending.startIndex...newline)
+                    switch stream.feed(line) {
+                    case .partial(let text):
+                        progress(text)
+                    case .finished(let answer):
+                        finish(answer)
+                        p.terminate()
+                    case nil:
+                        break
+                    }
+                }
+            }
             p.waitUntilExit()
             drained.wait()
             finish(Self.parse(out, status: p.terminationStatus, errors: errorText))
@@ -171,19 +296,37 @@ final class Asker {
         }
     }
 
+    /// Passes on at most one update every 60 ms, so a fast stream does not
+    /// lay out the card hundreds of times. The last text always arrives with
+    /// the finished answer, so a skipped update is never lost.
+    private static func throttled(_ send: @escaping (String) -> Void) -> (String) -> Void {
+        let lock = NSLock()
+        var last: TimeInterval = 0
+        return { text in
+            let now = ProcessInfo.processInfo.systemUptime
+            lock.lock()
+            let due = now - last >= 0.06
+            if due { last = now }
+            lock.unlock()
+            if due { send(text) }
+        }
+    }
+
     /// Models that take `fallbacks: "default"`: a declined answer is retried
     /// on another model by the API instead of coming back empty.
     private static let fallbackModels: Set<String> = [
         "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5",
     ]
 
-    /// Straight to the Claude API with your key. Two or three seconds faster
-    /// than the command line tool, and works on a Mac without Claude Code.
+    /// Straight to the Claude API with your key, streamed. Two or three
+    /// seconds faster than the command line tool, and works on a Mac without
+    /// Claude Code.
     private func askAPI(_ question: Question, after history: [Turn], key: String, config: Config,
-                        finish: @escaping (Answer) -> Void) {
+                        progress: @escaping (String) -> Void, finish: @escaping (Answer) -> Void) {
         var body: [String: Any] = [
             "model": config.llmModel,
             "max_tokens": 16000,
+            "stream": true,
             "system": Self.systemPrompt,
             "output_config": ["effort": config.llmEffort],
             "messages": Self.messages(question, after: history),
@@ -203,38 +346,44 @@ final class Asker {
             return
         }
         request.httpBody = data
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error as? URLError, error.code == .cancelled { return }
-            if let error {
+        apiJob = Task.detached {
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard status == 200 else {
+                    // An error is one JSON body, not a stream.
+                    var whole = Data()
+                    for try await byte in bytes { whole.append(byte) }
+                    finish(Self.parseAPI(whole, status: status))
+                    return
+                }
+                var stream = APIStream()
+                for try await line in bytes.lines {
+                    switch stream.feed(line) {
+                    case .partial(let text):
+                        progress(text)
+                    case .finished(let answer):
+                        finish(answer)
+                        return
+                    case nil:
+                        break
+                    }
+                }
+                finish(stream.end())
+            } catch {
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled { return }
                 finish(.failed("Could not reach the Claude API: \(error.localizedDescription)"))
-                return
             }
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            finish(Self.parseAPI(data ?? Data(), status: status))
         }
-        self.task = task
-        task.resume()
     }
 
-    /// The reply's text blocks, joined; thinking blocks are skipped. A refusal
-    /// or an API error comes back as a reason to show on the card.
+    /// An error reply from the API, as a reason to show on the card.
     private static func parseAPI(_ data: Data, status: Int) -> Answer {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .failed("The Claude API sent back something unreadable (HTTP \(status)).")
         }
-        if let error = obj["error"] as? [String: Any] {
-            let message = error["message"] as? String ?? "unknown error"
-            return .failed(status == 401 ? "Your API key was not accepted: \(message)" : "Claude API error: \(message)")
-        }
-        if obj["stop_reason"] as? String == "refusal" {
-            return .failed("Claude would not answer this one.")
-        }
-        let blocks = obj["content"] as? [[String: Any]] ?? []
-        let text = blocks.filter { $0["type"] as? String == "text" }
-            .compactMap { $0["text"] as? String }
-            .joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? .failed("Claude sent back an empty answer.") : .text(text)
+        let message = (obj["error"] as? [String: Any])?["message"] as? String ?? "unknown error (HTTP \(status))"
+        return .failed(status == 401 ? "Your API key was not accepted: \(message)" : "Claude API error: \(message)")
     }
 
     /// The conversation as API messages: each earlier question and its
@@ -281,20 +430,124 @@ final class Asker {
         return data
     }
 
-    /// The last line of claude's output is a "result" event with the reply,
-    /// or the reason there is none (not logged in, out of usage, and so on).
+    /// When the stream ended without a finished message: the last line of
+    /// claude's output is a "result" event with the reply, or the reason
+    /// there is none (not logged in, out of usage, and so on).
     private static func parse(_ out: Data, status: Int32, errors: String) -> Answer {
         for line in String(decoding: out, as: UTF8.self).split(separator: "\n").reversed() {
             guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
                   obj["type"] as? String == "result" else { continue }
             let result = (obj["result"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if obj["is_error"] as? Bool == true || obj["subtype"] as? String != "success" || result.isEmpty {
-                return .failed(result.isEmpty ? "claude stopped: \(obj["subtype"] as? String ?? "no reply")" : result)
+                return .failed(result.isEmpty ? "claude stopped: \(obj["subtype"] as? String ?? "no reply")" : loginHint(result))
             }
             return .text(result)
         }
         let tail = errors.split(separator: "\n").last.map(String.init) ?? ""
-        return .failed(tail.isEmpty ? "claude exited with code \(status) and no answer." : tail)
+        return .failed(tail.isEmpty ? "claude exited with code \(status) and no answer." : loginHint(tail))
+    }
+
+    /// claude's own text for a dead login ("OAuth session expired and could not
+    /// be refreshed", "Please run /login") does not say what to do from here,
+    /// and /login does not exist outside its own prompt.
+    private static func loginHint(_ message: String) -> String {
+        let text = message.lowercased()
+        let loggedOut = ["failed to authenticate", "not logged in", "/login", "oauth"].contains { text.contains($0) }
+        return loggedOut ? loggedOutMessage : message
+    }
+
+    static let loggedOutMessage = "Claude Code is logged out. Run \"claude auth login\" in Terminal, then ask again."
+
+    /// Runs `claude auth login` in a Terminal window, where the sign-in can
+    /// also take a pasted code if the browser cannot hand it back. A .command
+    /// file, since driving Terminal directly needs the Automation permission.
+    static func openLogin(config: Config) {
+        guard let exe = claudePath(config.llmClaudePath) else { return }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ScreenCatLLM")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("Log in to Claude Code.command")
+        let quoted = "'" + exe.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        do {
+            try "#!/bin/zsh\n\(quoted) auth login\n".write(to: file, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
+        } catch {
+            return
+        }
+        NSWorkspace.shared.open(file)
+    }
+}
+
+/// What one line of a stream says: more of the answer, or the end of it.
+enum StreamStep {
+    case partial(String)
+    case finished(Answer)
+}
+
+/// Claude's streaming events, shared by the API and the command line tool:
+/// text deltas build up the answer, and the end of the message finishes it.
+/// Thinking and other blocks are skipped.
+struct MessageEvents {
+    private(set) var text = ""
+    private var stop: String?
+
+    mutating func handle(_ event: [String: Any]) -> StreamStep? {
+        switch event["type"] as? String {
+        case "content_block_delta":
+            guard let delta = event["delta"] as? [String: Any], delta["type"] as? String == "text_delta",
+                  let piece = delta["text"] as? String, !piece.isEmpty else { return nil }
+            text += piece
+            return .partial(text)
+        case "message_delta":
+            stop = (event["delta"] as? [String: Any])?["stop_reason"] as? String
+            return nil
+        case "message_stop":
+            return .finished(end())
+        case "error":
+            let message = (event["error"] as? [String: Any])?["message"] as? String ?? "unknown error"
+            return .finished(.failed("Claude API error: \(message)"))
+        default:
+            return nil
+        }
+    }
+
+    /// The answer as it stands. A refusal drops any text already streamed:
+    /// it is not an answer.
+    func end() -> Answer {
+        if stop == "refusal" { return .failed("Claude would not answer this one.") }
+        let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return answer.isEmpty ? .failed("Claude sent back an empty answer.") : .text(answer)
+    }
+}
+
+/// The API's server-sent events, one line at a time.
+struct APIStream {
+    private var events = MessageEvents()
+
+    mutating func feed(_ line: String) -> StreamStep? {
+        guard line.hasPrefix("data:") else { return nil }
+        let json = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else { return nil }
+        return events.handle(obj)
+    }
+
+    func end() -> Answer { events.end() }
+}
+
+/// The command line tool's stream-json output, one line at a time. With
+/// `--include-partial-messages` it wraps the API's events in "stream_event"
+/// lines. Anything else (its own status lines, the final "result") is left
+/// to `Asker.parse` once the tool exits.
+struct CLIStream {
+    private var events = MessageEvents()
+
+    /// The tool retries an API error itself and reports the outcome in its
+    /// "result" line, so an error event here does not end the answer.
+    mutating func feed<Bytes: DataProtocol>(_ line: Bytes) -> StreamStep? {
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+              obj["type"] as? String == "stream_event",
+              let event = obj["event"] as? [String: Any],
+              event["type"] as? String != "error" else { return nil }
+        return events.handle(event)
     }
 }
 
@@ -356,18 +609,135 @@ func pngForUpload(_ image: NSImage) -> Data? {
     return rep.representation(using: .png, properties: [:])
 }
 
+/// Copy-twice mode's trigger. For text, the same text copied twice in a row,
+/// within `window` seconds, is a question; one copy is just a copy. A copied
+/// picture (such as a screenshot copied with Control) asks at once, as it
+/// always has; copying the same picture again within the window does not ask
+/// a second time. It is fed every poll of the clipboard's change count. All the
+/// changes one poll sees count as ONE copy, because some apps clear and then
+/// write the clipboard for a single Cmd+C, and those would otherwise ask on
+/// every copy.
+struct CopyTwiceDetector {
+    /// What a clipboard change holds, as far as LLM mode cares.
+    enum Content: Equatable {
+        case text(String)
+        /// A picture, with a cheap fingerprint: its types and size.
+        case image(String)
+    }
+
+    let window: TimeInterval = 1.0
+    private var lastCount: Int
+    private var first: (text: String, at: TimeInterval)?
+    /// The picture that last asked, so Cmd+C Cmd+C on it asks only once.
+    private var lastImage: (key: String, at: TimeInterval)?
+
+    init(changeCount: Int) { lastCount = changeCount }
+
+    /// True when this poll's change should ask. `content` is read only when
+    /// the clipboard changed; nil means it can never be a question, and it
+    /// breaks any pair in progress.
+    mutating func poll(changeCount: Int, at time: TimeInterval, content: () -> Content?) -> Bool {
+        guard changeCount != lastCount else { return false }
+        lastCount = changeCount
+        let now = content()
+        if case .image = now {} else { lastImage = nil }
+        switch now {
+        case nil:
+            first = nil
+            return false
+        case .image(let key):
+            first = nil
+            if let asked = lastImage, asked.key == key, time - asked.at <= window { return false }
+            lastImage = (key, time)
+            return true
+        case .text(let text):
+            if let pending = first, pending.text == text, time - pending.at <= window {
+                first = nil
+                return true
+            }
+            first = (text, time)
+            return false
+        }
+    }
+}
+
+/// `--copy-twice-selftest`: plays scripted copy sequences through the
+/// detector, polled every 0.05 s as the app does, and prints PASS or FAIL for
+/// each. Never touches the real clipboard, except to time how long reading
+/// its change count takes.
+func runCopyTwiceSelfTest() -> Bool {
+    typealias Content = CopyTwiceDetector.Content
+    struct Copy { let at: TimeInterval; let bump: Int; let content: Content? }
+    let a = Content.text("a"), b = Content.text("b")
+    let cases: [(String, [Copy], Int)] = [
+        ("single copy", [Copy(at: 0.12, bump: 1, content: a)], 0),
+        ("double copy 0.3 s apart", [Copy(at: 0.12, bump: 1, content: a), Copy(at: 0.42, bump: 1, content: a)], 1),
+        ("double copy 1.5 s apart", [Copy(at: 0.12, bump: 1, content: a), Copy(at: 1.62, bump: 1, content: a)], 0),
+        ("one copy that bumps the count by 2", [Copy(at: 0.12, bump: 2, content: a)], 0),
+        ("two different texts", [Copy(at: 0.12, bump: 1, content: a), Copy(at: 0.42, bump: 1, content: b)], 0),
+        ("triple copy", [Copy(at: 0.12, bump: 1, content: a), Copy(at: 0.37, bump: 1, content: a),
+                         Copy(at: 0.62, bump: 1, content: a)], 1),
+        ("double copy of a password", [Copy(at: 0.12, bump: 1, content: nil),
+                                       Copy(at: 0.42, bump: 1, content: nil)], 0),
+        ("double copy in an app that writes twice", [Copy(at: 0.12, bump: 2, content: a),
+                                                     Copy(at: 0.42, bump: 2, content: a)], 1),
+        ("double copy, then the same text once more later",
+         [Copy(at: 0.12, bump: 1, content: a), Copy(at: 0.42, bump: 1, content: a),
+          Copy(at: 2.02, bump: 1, content: a)], 1),
+        ("image only, copied once (a copied screenshot)", [Copy(at: 0.12, bump: 1, content: .image("p"))], 1),
+        ("text copied once, then an image", [Copy(at: 0.12, bump: 1, content: a),
+                                            Copy(at: 0.42, bump: 1, content: .image("p"))], 1),
+        ("image copied twice", [Copy(at: 0.12, bump: 1, content: .image("p")),
+                                Copy(at: 0.42, bump: 1, content: .image("p"))], 1),
+        ("two different images", [Copy(at: 0.12, bump: 1, content: .image("p")),
+                                  Copy(at: 0.42, bump: 1, content: .image("q"))], 2),
+    ]
+    var allPassed = true
+    for (name, copies, expected) in cases {
+        var detector = CopyTwiceDetector(changeCount: 100)
+        var count = 100
+        var current: Content?
+        var next = 0
+        var asks = 0
+        for tick in 0...80 {
+            let now = Double(tick) * 0.05
+            while next < copies.count, copies[next].at <= now {
+                count += copies[next].bump
+                current = copies[next].content
+                next += 1
+            }
+            if detector.poll(changeCount: count, at: now, content: { current }) { asks += 1 }
+        }
+        let passed = asks == expected
+        allPassed = allPassed && passed
+        print("\(passed ? "PASS" : "FAIL")  \(name): asked \(asks), expected \(expected)")
+    }
+    let reads = 2000
+    let started = ProcessInfo.processInfo.systemUptime
+    var sum = 0
+    for _ in 0..<reads { sum &+= NSPasteboard.general.changeCount }
+    let each = (ProcessInfo.processInfo.systemUptime - started) / Double(reads) * 1_000_000
+    print(String(format: "reading the change count: %.1f microseconds a read, %.2f ms a second at 20 polls",
+                 each, each * 20 / 1000))
+    return allPassed
+}
+
 /// LLM mode's ears: new clipboard contents and new screenshots.
 final class QuestionWatch {
     var onQuestion: ((Question) -> Void)?
-    /// Text the cat itself put there, such as a line copied out of an answer.
-    /// It is not a new question.
+    /// Every-copy mode only: text found in the last answer, such as a line
+    /// copied out of it some other way, is not a new question.
     var isOwnText: ((String) -> Bool)?
-    /// Set after the cat writes the clipboard, so that change is skipped.
+    /// The change count after the cat, or a Cmd+C or Cmd+X in its card,
+    /// wrote the clipboard, so that change is skipped.
     var ownChange = -1
 
     private var timer: Timer?
     private var lastChange = 0
     private var lastText = ""
+    /// Only a copy made twice in a row asks. See `CopyTwiceDetector`.
+    private var copyTwice = false
+    private var detector = CopyTwiceDetector(changeCount: 0)
     private var sources: [DispatchSourceFileSystemObject] = []
     private var folders: [URL] = []
     private var seen: Set<String> = []
@@ -385,12 +755,20 @@ final class QuestionWatch {
     var isRunning: Bool { timer != nil || !sources.isEmpty }
 
     /// Only what changes after this call counts. Whatever is already on the
-    /// clipboard, or already on the Desktop, is left alone.
-    func start(clipboard: Bool, screenshots: Bool) {
+    /// clipboard, or already on the Desktop, is left alone. With `copyTwice`,
+    /// one copy of text is ignored and only the same text copied twice in a
+    /// row asks; a copied picture asks at once.
+    func start(clipboard: Bool, screenshots: Bool, copyTwice: Bool) {
         stop()
         lastChange = NSPasteboard.general.changeCount
+        self.copyTwice = copyTwice
+        detector = CopyTwiceDetector(changeCount: lastChange)
         if clipboard {
-            let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in self?.checkClipboard() }
+            // Fast enough in copy-twice mode that the two presses of a quick
+            // Cmd+C Cmd+C land in two different polls.
+            let interval = copyTwice ? 0.05 : 0.4
+            let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in self?.checkClipboard() }
+            t.tolerance = copyTwice ? 0.01 : 0.1
             RunLoop.main.add(t, forMode: .common)
             timer = t
         }
@@ -407,6 +785,24 @@ final class QuestionWatch {
     /// What is on the clipboard now, for the menu's one-off ask. Nil when it
     /// is empty, private, or a file.
     static func clipboardQuestion() -> Question? {
+        switch clipboardContent() {
+        case .text(let text)?:
+            return .text(text)
+        case .image?:
+            guard let image = NSImage(pasteboard: .general), let png = pngForUpload(image) else { return nil }
+            return .image(png, from: "copied image")
+        case nil:
+            return nil
+        }
+    }
+
+    /// What kind of question the clipboard holds. Text is read as text. A
+    /// picture's bytes are read every time this runs, to size it for the
+    /// fingerprint. It runs once per clipboard change, and in copy-twice mode
+    /// once more when a change asks. Copied pictures are rare, so that is
+    /// cheap enough. Nil for what can never be a question: private, a file,
+    /// or nothing usable.
+    static func clipboardContent() -> CopyTwiceDetector.Content? {
         let pb = NSPasteboard.general
         let types = Set((pb.types ?? []).map(\.rawValue))
         guard types.isDisjoint(with: privateTypes),
@@ -418,14 +814,25 @@ final class QuestionWatch {
         let justALink = (text.hasPrefix("http://") || text.hasPrefix("https://"))
             && !text.contains(where: \.isWhitespace)
         if text.count >= 2, !(hasImage && justALink) { return .text(text) }
-        if hasImage, let image = NSImage(pasteboard: pb), let png = pngForUpload(image) {
-            return .image(png, from: "copied image")
-        }
-        return nil
+        guard hasImage else { return nil }
+        let size = (pb.data(forType: .png) ?? pb.data(forType: .tiff))?.count ?? 0
+        return .image(types.sorted().joined(separator: ",") + ":\(size):" + text)
     }
 
     private func checkClipboard() {
         let pb = NSPasteboard.general
+        if copyTwice {
+            // Copies the cat or its card made set `ownChange`, so they never
+            // count. A double copy is on purpose, so the same text asks again
+            // even when it also appears in the last answer.
+            let count = pb.changeCount
+            let asks = detector.poll(changeCount: count, at: ProcessInfo.processInfo.systemUptime) {
+                count == ownChange ? nil : Self.clipboardContent()
+            }
+            guard asks, let question = Self.clipboardQuestion() else { return }
+            onQuestion?(question)
+            return
+        }
         guard pb.changeCount != lastChange else { return }
         lastChange = pb.changeCount
         guard pb.changeCount != ownChange, let question = Self.clipboardQuestion() else { return }

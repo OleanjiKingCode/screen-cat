@@ -127,6 +127,10 @@ struct Config {
     var llmMode = false
     var llmFromClipboard = true
     var llmFromScreenshots = true
+    /// Ask about text only when the same text is copied twice in a row
+    /// (Cmd+C Cmd+C), so an ordinary copy stays an ordinary copy. A copied
+    /// picture still asks at once. Off, every copy asks.
+    var llmCopyTwice = true
     /// Put each answer on the clipboard as it arrives, ready to paste.
     var llmCopyAnswer = true
     /// Show the cat and the answer card. Off, answers only go to the
@@ -137,6 +141,9 @@ struct Config {
     var llmEffort = "medium"
     /// Full path to `claude`, if it is not in one of the usual places.
     var llmClaudePath = ""
+    /// Option+Cmd+A asks about the clipboard from any app while LLM mode is
+    /// on. It takes the keys from every app, Finder's Deselect All included.
+    var llmShortcut = true
 
     // Activity log ---------------------------------------------------------
     /// Keep a plain-text diary of apps, sleep, Bluetooth and what is running,
@@ -155,6 +162,13 @@ struct Config {
                       eye: NSColor(hex: eyeColor) ?? .white,
                       ball: NSColor(hex: ballColor) ?? .magenta)
     }
+
+    /// The answer card's accent: the cat's fur colour, or the dog's own tan
+    /// coat, which the colour settings do not change.
+    var answerAccent: NSColor {
+        pet == "dog" ? Self.dogAccent : NSColor(hex: furColor) ?? .systemPurple
+    }
+    static let dogAccent = NSColor(srgbRed: 0xD4 / 255.0, green: 0x91 / 255.0, blue: 0x4F / 255.0, alpha: 1)
 
     /// Colours for the few things drawn rather than blitted: the z's and the
     /// food bowl.
@@ -233,11 +247,13 @@ struct Config {
         c.llmMode               = bool("llmMode")              ?? c.llmMode
         c.llmFromClipboard      = bool("llmFromClipboard")     ?? c.llmFromClipboard
         c.llmFromScreenshots    = bool("llmFromScreenshots")   ?? c.llmFromScreenshots
+        c.llmCopyTwice          = bool("llmCopyTwice")         ?? c.llmCopyTwice
         c.llmCopyAnswer         = bool("llmCopyAnswer")        ?? c.llmCopyAnswer
         c.llmShowAnswer         = bool("llmShowAnswer")        ?? c.llmShowAnswer
         c.llmModel              = str("llmModel")              ?? c.llmModel
         c.llmEffort             = str("llmEffort")             ?? c.llmEffort
         c.llmClaudePath         = str("llmClaudePath")         ?? c.llmClaudePath
+        c.llmShortcut           = bool("llmShortcut")          ?? c.llmShortcut
         c.growScale             = num("growScale")             ?? c.growScale
         c.activityLog           = bool("activityLog")          ?? c.activityLog
         c.activityLogDays       = num("activityLogDays")       ?? c.activityLogDays
@@ -347,10 +363,12 @@ struct Config {
             "llmMode": d.llmMode,
             "llmFromClipboard": d.llmFromClipboard,
             "llmFromScreenshots": d.llmFromScreenshots,
+            "llmCopyTwice": d.llmCopyTwice,
             "llmCopyAnswer": d.llmCopyAnswer,
             "llmShowAnswer": d.llmShowAnswer,
             "llmModel": d.llmModel,
             "llmEffort": d.llmEffort,
+            "llmShortcut": d.llmShortcut,
             "growScale": d.growScale,
             "activityLog": d.activityLog,
             "activityLogDays": d.activityLogDays,
