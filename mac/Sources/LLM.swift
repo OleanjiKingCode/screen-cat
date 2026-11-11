@@ -439,12 +439,21 @@ final class Asker {
                   obj["type"] as? String == "result" else { continue }
             let result = (obj["result"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if obj["is_error"] as? Bool == true || obj["subtype"] as? String != "success" || result.isEmpty {
-                return .failed(result.isEmpty ? "claude stopped: \(obj["subtype"] as? String ?? "no reply")" : result)
+                return .failed(result.isEmpty ? "claude stopped: \(obj["subtype"] as? String ?? "no reply")" : loginHint(result))
             }
             return .text(result)
         }
         let tail = errors.split(separator: "\n").last.map(String.init) ?? ""
-        return .failed(tail.isEmpty ? "claude exited with code \(status) and no answer." : tail)
+        return .failed(tail.isEmpty ? "claude exited with code \(status) and no answer." : loginHint(tail))
+    }
+
+    /// claude's own text for a dead login ("OAuth session expired and could not
+    /// be refreshed", "Please run /login") does not say what to do from here,
+    /// and /login does not exist outside its own prompt.
+    private static func loginHint(_ message: String) -> String {
+        let text = message.lowercased()
+        let loggedOut = ["failed to authenticate", "not logged in", "/login", "oauth"].contains { text.contains($0) }
+        return loggedOut ? "Claude Code is logged out. Run \"claude auth login\" in Terminal, then ask again." : message
     }
 }
 
